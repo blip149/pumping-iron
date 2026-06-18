@@ -433,6 +433,100 @@
 
   .whatsapp-btn:hover { background: #1aab52; }
 
+  .bundle-section {
+    margin-top: 1.5rem;
+    border: 1px solid var(--border);
+    background: var(--black);
+  }
+
+  .bundle-header {
+    background: var(--dark);
+    padding: 0.85rem 1.5rem;
+    font-family: var(--font-head);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--red);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .bundle-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+  }
+
+  .bundle-card {
+    background: var(--dark);
+    padding: 1.25rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.2s;
+    position: relative;
+  }
+
+  .bundle-card:hover { background: var(--card); }
+  .bundle-card.popular { background: rgba(192,24,26,0.12); }
+  .bundle-card.popular:hover { background: rgba(192,24,26,0.2); }
+
+  .bundle-badge {
+    position: absolute;
+    top: -1px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--red);
+    color: var(--white);
+    font-family: var(--font-head);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 0.2rem 0.6rem;
+    white-space: nowrap;
+  }
+
+  .bundle-duration {
+    font-family: var(--font-display);
+    font-size: 1.4rem;
+    color: var(--white);
+    line-height: 1;
+    margin-bottom: 0.3rem;
+    margin-top: 0.5rem;
+  }
+
+  .bundle-sachets {
+    font-size: 0.75rem;
+    color: var(--gray);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+  }
+
+  .bundle-price {
+    font-family: var(--font-head);
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--red);
+    margin-bottom: 0.2rem;
+  }
+
+  .bundle-per {
+    font-size: 0.75rem;
+    color: var(--gray);
+  }
+
+  .bundle-saving {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: #25D366;
+    font-weight: 600;
+  }
+
+  @media (max-width: 540px) {
+    .bundle-grid { grid-template-columns: 1fr; }
+  }
+
   /* PROTOCOLS */
   .protocols { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-top: 2rem; }
 
@@ -665,7 +759,12 @@
         <div class="disclaimer" id="result-disclaimer"></div>
       </div>
       <div style="padding: 1.5rem;">
+        <div id="maintenance-nudge" style="display:none; margin-bottom:1rem; padding:1rem; background:rgba(192,24,26,0.08); border-left:3px solid var(--red); font-size:0.85rem; color:var(--light); line-height:1.6;"></div>
         <a class="whatsapp-btn" id="whatsapp-link" href="#" target="_blank">📲 ORDER ON WHATSAPP</a>
+        <div class="bundle-section" id="bundle-section" style="display:none;">
+          <div class="bundle-header">💰 Save more — choose a bundle</div>
+          <div class="bundle-grid" id="bundle-grid"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -842,6 +941,20 @@
   const PACKAGING = 8.5
   const PPG = TUB_COST / TUB_GRAMS
 
+  // Weight classes based on loading dose = weight * 0.075g per sachet
+  // Classes keep everyone within ~0.75g of their exact dose
+  const WEIGHT_CLASSES = [
+    { name: 'A', min: 30,  max: 50,  loadingG: 3.0, label: '30–50kg' },
+    { name: 'B', min: 51,  max: 67,  loadingG: 4.5, label: '51–67kg' },
+    { name: 'C', min: 68,  max: 80,  loadingG: 6.0, label: '68–80kg' },
+    { name: 'D', min: 81,  max: 100, loadingG: 7.5, label: '81–100kg' },
+    { name: 'E', min: 101, max: 250, loadingG: 9.0, label: '101kg+' },
+  ]
+
+  function getWeightClass(kg) {
+    return WEIGHT_CLASSES.find(c => kg >= c.min && kg <= c.max)
+  }
+
   function sachetCost(g) { return (PPG * g) + PACKAGING }
 
   function multiplier(g) {
@@ -879,28 +992,28 @@
       return
     }
 
-    let rows = [], title = '', disclaimer = '', waMsg = ''
+    const wc = getWeightClass(weight)
     const water = waterRec(weight)
     const pickupNote = gym ? `Pickup gym: ${gym}\n` : ''
     const deliveryLine = `Area: ${location}\n${pickupNote}`
 
+    let rows = [], title = '', disclaimer = '', waMsg = ''
+
     if (goal === 'fastest') {
-      const loadingDosePerDay = weight * 0.3
-      const sachetsPerDay = 4
-      const gramsPerSachet = round2(loadingDosePerDay / sachetsPerDay)
-      const loadingGrams = Math.max(gramsPerSachet, 3)
-      const loadingPricePerSachet = round2(sachetPrice(loadingGrams))
-      const loadingTotal = round2(loadingPricePerSachet * sachetsPerDay * 7)
+      const loadingG = wc.loadingG
+      const loadingPrice = round2(sachetPrice(loadingG))
+      const loadingTotal = round2(loadingPrice * 4 * 7)
       const maintPrice = round2(sachetPrice(3))
 
       title = 'LOADING → MAINTENANCE PLAN'
       rows = [
         { k: 'Your weight', v: weight + ' kg' },
+        { k: 'Weight class', v: `Class ${wc.name} (${wc.label})` },
         { k: 'Phase 1 — Loading (7 days)', v: '' },
-        { k: 'Daily dose', v: round2(loadingDosePerDay) + 'g across 4 sachets' },
-        { k: 'Grams per sachet', v: loadingGrams + 'g' },
-        { k: 'Price per sachet', v: 'KSh ' + loadingPricePerSachet, hl: true },
-        { k: 'Total sachets (7 days)', v: sachetsPerDay * 7 + ' sachets' },
+        { k: 'Sachet size', v: loadingG + 'g per sachet' },
+        { k: 'Daily intake', v: `4 sachets × ${loadingG}g = ${round2(loadingG * 4)}g` },
+        { k: 'Price per sachet', v: 'KSh ' + loadingPrice, hl: true },
+        { k: 'Total sachets (7 days)', v: '28 sachets' },
         { k: 'Loading phase cost', v: 'KSh ' + loadingTotal },
         { k: 'Phase 2 — Maintenance (ongoing)', v: '' },
         { k: 'Daily dose', v: '3g — 1 sachet per day' },
@@ -908,8 +1021,8 @@
         { k: 'Monthly maintenance cost', v: 'KSh ' + round2(maintPrice * 30) },
         { k: 'Daily water intake', v: water + ' litres minimum' },
       ]
-      disclaimer = `Take 4 sachets spread throughout the day — morning, midday, post-workout, evening. After 7 days switch to 1 sachet daily. Drink ${water}L of water per day minimum.`
-      waMsg = `Hi Pumping Iron! I'd like to order my creatine bundle.\n\nPlan: Loading → Maintenance\nWeight: ${weight}kg\nLoading sachets: ${loadingGrams}g × ${sachetsPerDay * 7} sachets (7 days)\nMaintenance sachets: 3g daily\n${deliveryLine}\nPlease confirm delivery fee and total cost.`
+      disclaimer = `You are in Weight Class ${wc.name} (${wc.label}). Take 4 × ${loadingG}g sachets spread throughout the day — morning, midday, post-workout, evening. After 7 days switch to 1 × 3g maintenance sachet daily. Drink ${water}L of water per day minimum.`
+      waMsg = `Hi Pumping Iron! I'd like to order my creatine bundle.\n\nPlan: Loading → Maintenance\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\nLoading sachets: ${loadingG}g × 28 sachets (7 days)\nMaintenance sachets: 3g daily\n${deliveryLine}\nPlease confirm delivery fee and total cost.`
 
     } else if (goal === 'accelerated') {
       const pricePerSachet = round2(sachetPrice(5))
@@ -919,6 +1032,7 @@
       title = 'ACCELERATED MAINTENANCE PLAN'
       rows = [
         { k: 'Your weight', v: weight + ' kg' },
+        { k: 'Weight class', v: `Class ${wc.name} (${wc.label})` },
         { k: 'Phase 1 — Accelerated (3–4 weeks)', v: '' },
         { k: 'Daily dose', v: '5g — 1 sachet per day' },
         { k: 'Price per sachet', v: 'KSh ' + pricePerSachet, hl: true },
@@ -929,8 +1043,8 @@
         { k: 'Monthly maintenance cost', v: 'KSh ' + round2(maintPrice * 30) },
         { k: 'Daily water intake', v: water + ' litres minimum' },
       ]
-      disclaimer = `Take 1 sachet daily for 3–4 weeks until fully saturated, then switch to a 3g maintenance sachet. Drink ${water}L of water daily.`
-      waMsg = `Hi Pumping Iron! I'd like to order my creatine bundle.\n\nPlan: Accelerated Maintenance\nWeight: ${weight}kg\nPhase 1: 5g sachets × 21 sachets (3 weeks)\nPhase 2: 3g maintenance sachets ongoing\n${deliveryLine}\nPlease confirm delivery fee and total cost.`
+      disclaimer = `You are in Weight Class ${wc.name} (${wc.label}). Take 1 × 5g sachet daily for 3–4 weeks until fully saturated, then switch to a 3g maintenance sachet. Drink ${water}L of water daily.`
+      waMsg = `Hi Pumping Iron! I'd like to order my creatine bundle.\n\nPlan: Accelerated Maintenance\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\nPhase 1: 5g sachets × 21 sachets (3 weeks)\nPhase 2: 3g maintenance sachets ongoing\n${deliveryLine}\nPlease confirm delivery fee and total cost.`
 
     } else {
       const pricePerSachet = round2(sachetPrice(3))
@@ -938,14 +1052,15 @@
       title = 'STANDARD MAINTENANCE PLAN'
       rows = [
         { k: 'Your weight', v: weight + ' kg' },
+        { k: 'Weight class', v: `Class ${wc.name} (${wc.label})` },
         { k: 'Daily dose', v: '3g — 1 sachet per day' },
         { k: 'Price per sachet', v: 'KSh ' + pricePerSachet, hl: true },
         { k: 'Full saturation in', v: '3–4 weeks' },
         { k: 'Monthly cost', v: 'KSh ' + round2(pricePerSachet * 30) },
         { k: 'Daily water intake', v: water + ' litres minimum' },
       ]
-      disclaimer = `One sachet daily — simplest and most affordable plan. Full creatine saturation takes 3–4 weeks. Drink ${water}L of water per day.`
-      waMsg = `Hi Pumping Iron! I'd like to order my creatine bundle.\n\nPlan: Standard Maintenance\nWeight: ${weight}kg\nSachets: 3g daily\n${deliveryLine}\nPlease confirm delivery fee and total cost.`
+      disclaimer = `You are in Weight Class ${wc.name} (${wc.label}). One 3g sachet daily — simplest and most affordable plan. Full creatine saturation takes 3–4 weeks. Drink ${water}L of water per day.`
+      waMsg = `Hi Pumping Iron! I'd like to order my creatine bundle.\n\nPlan: Standard Maintenance\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\nSachets: 3g daily\n${deliveryLine}\nPlease confirm delivery fee and total cost.`
     }
 
     document.getElementById('result-title').textContent = title
@@ -969,6 +1084,58 @@
     document.getElementById('result-disclaimer').textContent = disclaimer
     const waUrl = `https://wa.me/254115509593?text=${encodeURIComponent(waMsg)}`
     document.getElementById('whatsapp-link').href = waUrl
+
+    // Maintenance nudge for loading phase
+    const nudgeEl = document.getElementById('maintenance-nudge')
+    if (goal === 'fastest') {
+      nudgeEl.style.display = 'block'
+      nudgeEl.innerHTML = `💡 <strong>Most customers choose Accelerated Maintenance instead.</strong> Same creatine saturation over 3 weeks — at a fraction of the loading cost. <a href="#" onclick="document.getElementById('goal').value='accelerated';calculate();return false;" style="color:var(--red);font-weight:700;">Switch to Accelerated Maintenance →</a>`
+    } else {
+      nudgeEl.style.display = 'none'
+    }
+
+    // Bundle pricing — only for maintenance plans
+    const bundleSection = document.getElementById('bundle-section')
+    const bundleGrid = document.getElementById('bundle-grid')
+
+    if (goal === 'simple' || goal === 'accelerated') {
+      const basePrice = round2(sachetPrice(3))
+      const bundles = [
+        { duration: '1 WEEK',  sachets: 7,  multiplier: 1.0,   label: 'Try it' },
+        { duration: '1 MONTH', sachets: 30, multiplier: 0.9,   label: 'Most popular', popular: true },
+        { duration: '3 MONTHS',sachets: 90, multiplier: 0.82,  label: 'Best value' },
+      ]
+
+      bundleGrid.innerHTML = ''
+      bundles.forEach(b => {
+        const pricePerSachet = round2(basePrice * b.multiplier)
+        const total = round2(pricePerSachet * b.sachets)
+        const saving = b.multiplier < 1 ? `Save KSh ${round2((basePrice - pricePerSachet) * b.sachets)}` : ''
+        const discount = b.multiplier < 1 ? `${Math.round((1 - b.multiplier) * 100)}% off` : ''
+
+        const bundleWaMsg = `Hi Pumping Iron! I'd like to order a maintenance bundle.\n\nBundle: ${b.duration} (${b.sachets} sachets)\nSachet size: 3g\nPrice per sachet: KSh ${pricePerSachet}\nTotal: KSh ${total}\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\n${deliveryLine}\nPlease confirm delivery fee and order.`
+        const bundleUrl = `https://wa.me/254115509593?text=${encodeURIComponent(bundleWaMsg)}`
+
+        const card = document.createElement('a')
+        card.href = bundleUrl
+        card.target = '_blank'
+        card.style.textDecoration = 'none'
+        card.className = 'bundle-card' + (b.popular ? ' popular' : '')
+        card.innerHTML = `
+          ${b.popular ? '<span class="bundle-badge">MOST POPULAR</span>' : ''}
+          <div class="bundle-duration">${b.duration}</div>
+          <div class="bundle-sachets">${b.sachets} sachets</div>
+          <div class="bundle-price">KSh ${total}</div>
+          <div class="bundle-per">KSh ${pricePerSachet}/sachet ${discount ? '· ' + discount : ''}</div>
+          ${saving ? '<div class="bundle-saving">' + saving + '</div>' : ''}
+        `
+        bundleGrid.appendChild(card)
+      })
+
+      bundleSection.style.display = 'block'
+    } else {
+      bundleSection.style.display = 'none'
+    }
 
     const resultEl = document.getElementById('result')
     resultEl.classList.add('visible')
