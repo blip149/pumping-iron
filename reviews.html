@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customer Reviews — Pumping Iron Creatine</title>
+<meta name="description" content="Real reviews from real Pumping Iron customers in Kiambu. See what gym-goers are saying about pre-portioned USN creatine, delivered to your gym.">
+<meta name="robots" content="index, follow">
+
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --red: #C0181A;
+    --red-dark: #8B0F11;
+    --black: #0D0D0D;
+    --dark: #1A1A1A;
+    --card: #222222;
+    --border: #333333;
+    --gray: #888888;
+    --light: #CCCCCC;
+    --white: #F5F5F5;
+    --font-display: 'Bebas Neue', sans-serif;
+    --font-head: 'Barlow Condensed', sans-serif;
+    --font-body: 'Inter', sans-serif;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--black);
+    color: var(--white);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* NAV */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    background: rgba(13,13,13,0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-brand {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    color: var(--red);
+    letter-spacing: 0.05em;
+    text-decoration: none;
+  }
+
+  .nav-links { display: flex; gap: 1.5rem; align-items: center; }
+
+  .nav-back {
+    color: var(--light);
+    font-family: var(--font-head);
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-decoration: none;
+  }
+
+  .nav-back:hover { color: var(--white); }
+
+  .nav-order {
+    background: var(--red);
+    color: var(--white);
+    border: none;
+    font-family: var(--font-head);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 0.5rem 1.2rem;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .nav-order:hover { background: var(--red-dark); }
+
+  /* HEADER */
+  .page-header {
+    padding: 8rem 1.5rem 3rem;
+    text-align: center;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  .page-eyebrow {
+    font-family: var(--font-head);
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.25em;
+    color: var(--red);
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+
+  .page-title {
+    font-family: var(--font-display);
+    font-size: clamp(2.5rem, 8vw, 5rem);
+    line-height: 1;
+    margin-bottom: 1rem;
+  }
+
+  .page-sub {
+    font-size: 1rem;
+    color: var(--light);
+    max-width: 480px;
+    margin: 0 auto;
+    line-height: 1.7;
+  }
+
+  /* STATS STRIP */
+  .stats {
+    background: var(--red);
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    justify-content: center;
+    gap: 2.5rem;
+    flex-wrap: wrap;
+  }
+
+  .stat { display: flex; flex-direction: column; align-items: center; }
+
+  .stat-num {
+    font-family: var(--font-display);
+    font-size: 1.8rem;
+    line-height: 1;
+    color: var(--white);
+  }
+
+  .stat-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    color: rgba(255,255,255,0.85);
+    text-transform: uppercase;
+  }
+
+  /* SECTION */
+  section { padding: 4rem 1.5rem; max-width: 1000px; margin: 0 auto; }
+
+  .section-label {
+    font-family: var(--font-head);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.25em;
+    color: var(--red);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+    text-align: center;
+  }
+
+  .section-title {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 6vw, 3rem);
+    line-height: 1;
+    margin-bottom: 2.5rem;
+    text-align: center;
+  }
+
+  /* TESTIMONIAL GRID */
+  .testimonial-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+  }
+
+  .testimonial-card {
+    background: var(--dark);
+    padding: 1.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .testimonial-stars {
+    color: var(--red);
+    font-size: 1rem;
+    letter-spacing: 0.1em;
+  }
+
+  .testimonial-quote {
+    font-size: 0.95rem;
+    color: var(--white);
+    line-height: 1.7;
+    flex-grow: 1;
+  }
+
+  .testimonial-quote::before { content: '"'; color: var(--red); font-family: var(--font-display); font-size: 1.3rem; }
+  .testimonial-quote::after { content: '"'; color: var(--red); font-family: var(--font-display); font-size: 1.3rem; }
+
+  .testimonial-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .testimonial-author {
+    font-family: var(--font-head);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--white);
+  }
+
+  .testimonial-meta {
+    font-size: 0.75rem;
+    color: var(--gray);
+    margin-top: 0.15rem;
+  }
+
+  .verified-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: rgba(37,211,102,0.12);
+    color: #25D366;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.3rem 0.6rem;
+    white-space: nowrap;
+  }
+
+  /* SCREENSHOT CARD */
+  .screenshot-card {
+    background: var(--dark);
+    padding: 1.25rem;
+  }
+
+  .screenshot-img {
+    width: 100%;
+    border: 1px solid var(--border);
+    display: block;
+    margin-bottom: 1rem;
+  }
+
+  /* EMPTY STATE */
+  .empty-state {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    border: 1px dashed var(--border);
+    background: var(--dark);
+  }
+
+  .empty-icon { font-size: 2.5rem; margin-bottom: 1rem; }
+
+  .empty-title {
+    font-family: var(--font-head);
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    color: var(--white);
+  }
+
+  .empty-text {
+    font-size: 0.9rem;
+    color: var(--light);
+    max-width: 420px;
+    margin: 0 auto;
+    line-height: 1.7;
+  }
+
+  /* CTA */
+  .cta-box {
+    background: var(--dark);
+    border-top: 3px solid var(--red);
+    border-bottom: 3px solid var(--red);
+    padding: 3rem 1.5rem;
+    text-align: center;
+  }
+
+  .cta-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.8rem, 5vw, 2.8rem);
+    margin-bottom: 1rem;
+  }
+
+  .cta-text {
+    color: var(--light);
+    font-size: 0.95rem;
+    max-width: 440px;
+    margin: 0 auto 1.5rem;
+    line-height: 1.7;
+  }
+
+  .btn-primary {
+    background: var(--red);
+    color: var(--white);
+    font-family: var(--font-head);
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 0.85rem 2rem;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    transition: background 0.2s;
+  }
+
+  .btn-primary:hover { background: var(--red-dark); }
+
+  /* FOOTER */
+  footer {
+    background: var(--dark);
+    border-top: 1px solid var(--border);
+    padding: 2rem 1.5rem;
+    text-align: center;
+  }
+
+  .footer-brand { font-family: var(--font-display); font-size: 2rem; color: var(--red); margin-bottom: 0.5rem; }
+  .footer-sub { font-size: 0.85rem; color: var(--gray); }
+  .footer-links { margin-top: 1rem; }
+  .footer-links a { color: var(--gray); font-size: 0.85rem; text-decoration: none; margin: 0 0.5rem; }
+  .footer-links a:hover { color: var(--light); }
+
+  /* SCROLL REVEAL */
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.5s ease, transform 0.5s ease; }
+  .reveal.visible { opacity: 1; transform: none; }
+
+  @media (max-width: 540px) {
+    .stats { gap: 1.25rem; }
+    .nav-links { gap: 0.75rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-brand" href="index.html">PUMPING IRON</a>
+  <div class="nav-links">
+    <a class="nav-back" href="index.html">← Back to site</a>
+    <a class="nav-order" href="index.html#calculator">GET MY DOSE</a>
+  </div>
+</nav>
+
+<!-- HEADER -->
+<div class="page-header">
+  <p class="page-eyebrow">Customer Reviews</p>
+  <h1 class="page-title">REAL PEOPLE.<br>REAL RESULTS.</h1>
+  <p class="page-sub">Every review here is from a verified Pumping Iron customer in Kiambu. No paid reviews, no stock photos — just real feedback from real gym-goers.</p>
+</div>
+
+<!-- STATS -->
+<div class="stats">
+  <div class="stat">
+    <span class="stat-num">100%</span>
+    <span class="stat-label">Verified orders</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num">0</span>
+    <span class="stat-label">Paid reviews</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num">Kiambu</span>
+    <span class="stat-label">Real customers</span>
+  </div>
+</div>
+
+<!-- TESTIMONIALS -->
+<section class="reveal">
+  <p class="section-label">What customers are saying</p>
+  <h2 class="section-title">VERIFIED REVIEWS</h2>
+
+  <div class="testimonial-grid" id="testimonial-grid">
+
+    <!-- ============================================ -->
+    <!-- TEMPLATE — DUPLICATE THIS BLOCK FOR EACH REVIEW -->
+    <!-- Delete the empty-state div below once you add reviews -->
+    <!-- ============================================ -->
+
+    <!--
+    <div class="testimonial-card">
+      <div class="testimonial-stars">★★★★★</div>
+      <p class="testimonial-quote">Quote goes here — the actual words the customer said.</p>
+      <div class="testimonial-footer">
+        <div>
+          <div class="testimonial-author">First Name</div>
+          <div class="testimonial-meta">Class C · Standard Maintenance</div>
+        </div>
+        <span class="verified-badge">✓ Verified</span>
+      </div>
+    </div>
+    -->
+
+  </div>
+
+  <!-- EMPTY STATE — remove this div once real reviews are added above -->
+  <div class="empty-state" id="empty-state">
+    <div class="empty-icon">💬</div>
+    <p class="empty-title">Reviews coming soon</p>
+    <p class="empty-text">We're just getting started in Kiambu. Be one of our first customers and your feedback could be featured right here.</p>
+  </div>
+</section>
+
+<!-- SCREENSHOTS -->
+<section class="reveal">
+  <p class="section-label">Straight from WhatsApp</p>
+  <h2 class="section-title">UNEDITED FEEDBACK</h2>
+
+  <div class="testimonial-grid" id="screenshot-grid">
+
+    <!-- ============================================ -->
+    <!-- TEMPLATE — DUPLICATE FOR EACH SCREENSHOT -->
+    <!-- Replace src with your uploaded screenshot path -->
+    <!-- ============================================ -->
+
+    <!--
+    <div class="screenshot-card">
+      <img class="screenshot-img" src="reviews/screenshot1.jpg" alt="Customer WhatsApp feedback">
+      <div class="testimonial-footer">
+        <div class="testimonial-author">First Name, Class B</div>
+        <span class="verified-badge">✓ Verified</span>
+      </div>
+    </div>
+    -->
+
+  </div>
+</section>
+
+<!-- CTA -->
+<div class="cta-box">
+  <p class="cta-title">BE OUR NEXT REVIEW</p>
+  <p class="cta-text">Try Pumping Iron and tell us what you think. Real feedback helps other gym-goers in Kiambu make the right choice.</p>
+  <a class="btn-primary" href="index.html#calculator">Calculate My Dose</a>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <p class="footer-brand">PUMPING IRON</p>
+  <p class="footer-sub">Creatine Monohydrate · Kiambu County, Kenya · 0115509593</p>
+  <div class="footer-links">
+    <a href="index.html">Home</a>
+    <a href="index.html#calculator">Calculator</a>
+    <a href="testimonials.html">Reviews</a>
+  </div>
+</footer>
+
+<script>
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible') })
+  }, { threshold: 0.1 })
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el))
+</script>
+</body>
+</html>
