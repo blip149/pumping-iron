@@ -714,18 +714,18 @@
         </div>
         <div class="form-group">
           <label class="form-label" for="goal">Your goal</label>
-          <select class="form-select" id="goal">
-            <!-- <option value="">Select goal</option> -->
+          <select class="form-select" id="goal"onChange="conditionalRenderDuration()" >
+            <option value="">Select goal</option>
             <option value="loading">Fast Saturation — loading phase (5 days)</option>
             <option value="maintenance">Ongoing Daily Maintenance</option>
           </select>
         </div>
       </div>
 
-      <div class="form-group">
+      <div class="form-group" id="conditional-select" >
         <label class="form-label" for="duration">How long do you need it for?</label>
         <select class="form-select" id="duration">
-          <option value="">Select duration</option>
+          <option value="">Select Duration</option>    
           <option value="7">1 Week</option>
           <option value="14">2 Weeks </option>
           <option value="21">3 Weeks </option>
@@ -744,7 +744,7 @@
       </div>
 
       <div class="delivery-note">
-        📍 <strong>Delivery:</strong> Flat KSh 100 anywhere in Kiambu County.
+        📍 <strong>Delivery:</strong> Flat KSh 120 anywhere in Kiambu County.
       </div>
 
       <button class="calc-btn" onclick="calculate()">CALCULATE MY PLAN</button>
@@ -830,7 +830,7 @@
     <p class="zone-title">DELIVERY FEE</p>
     <div class="zone-row">
       <span class="zone-area">Anywhere in Kiambu County</span>
-      <span class="zone-fee">KSh 100 flat</span>
+      <span class="zone-fee">KSh 120 flat</span>
     </div>
   </div>
   <p style="margin-top:1rem; font-size:0.82rem; color:var(--gray);">Outside Kiambu? Message us on WhatsApp — we'll work out delivery before confirming your order.</p>
@@ -948,9 +948,8 @@ const PPG = TUB_COST / TUB_GRAMS;              // KSh 7.317 per gram
 const MYLAR_SMALL = 1095 / 800;                // KSh 1.369 per sachet (3.0g & 4.5g)
 const MYLAR_LARGE  = 1095 / 400;               // KSh 2.738 per sachet (6.0g, 7.5g & 9.0g)
 
-const PROFIT_PER_SACHET = 18;                  // Your fixed floor profit
-const OUTER_POUCH_FEE = 20;                    // One-time per order
-const DELIVERY_FEE_KIAMBU = 100;               // Flat rate for Kiambu County
+const PROFIT_PER_SACHET = 18;                  // Your fixed floor profit            
+const DELIVERY_FEE_KIAMBU = 120;               // Flat rate for Kiambu County
 
 // ----- WEIGHT CLASSES -----
 const WEIGHT_CLASSES = [
@@ -1035,7 +1034,7 @@ function calculate() {
     sachetsPerDay = 4;
     totalSachets = sachetsPerDay * loadingDays;
     sachetSubtotal = round2(pricePerSachet * totalSachets);
-    total = round2(sachetSubtotal + OUTER_POUCH_FEE);
+    total = round2(sachetSubtotal + DELIVERY_FEE_KIAMBU);
 
     planName = 'Fast Saturation (Loading)';
     title = 'FAST SATURATION PLAN';
@@ -1049,12 +1048,12 @@ function calculate() {
       { k: 'Daily intake', v: `4 × ${sachetGrams}g sachets/day` },
       { k: 'Total sachets', v: totalSachets + ' sachets' },
       { k: 'Sachet subtotal', v: 'KSh ' + sachetSubtotal },
-      { k: 'Outer pouch + label fee', v: 'KSh ' + OUTER_POUCH_FEE },
+      { k: 'Delivery fee', v: 'KSh ' + DELIVERY_FEE_KIAMBU },
       { k: 'TOTAL (before delivery)', v: 'KSh ' + total, hl: true },
       { k: 'Daily water intake', v: water + ' litres minimum' },
     ], disclaimer);
 
-    orderMsg = `Hi Pumping Iron! I'd like to order.\n\nPlan: ${planName}\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\n\nSachet size: ${sachetGrams}g\nDuration: 5 days (fixed)\nTotal sachets: ${totalSachets}\nSachet subtotal: KSh ${sachetSubtotal}\nOuter pouch fee: KSh ${OUTER_POUCH_FEE}\nTOTAL: KSh ${total}\n\n${deliveryLine}\nPlease confirm and process my order.`;
+    orderMsg = `Hi Pumping Iron! I'd like to order.\n\nPlan: ${planName}\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\n\nSachet size: ${sachetGrams}g\nDuration: 5 days (fixed)\nTotal sachets: ${totalSachets}\nSachet subtotal: KSh ${sachetSubtotal}\nOuter pouch fee: KSh ${DELIVERY_FEE_KIAMBU}\nTOTAL: KSh ${total}\n\nPlease confirm and process my order.`;
     setWhatsapp(orderMsg);
 
   } else {
@@ -1062,7 +1061,7 @@ function calculate() {
     sachetsPerDay = 1;
     totalSachets = sachetsPerDay * duration;
     sachetSubtotal = round2(pricePerSachet * totalSachets);
-    total = round2(sachetSubtotal + OUTER_POUCH_FEE);
+    total = round2(sachetSubtotal + DELIVERY_FEE_KIAMBU);
     const durObj = getDuration(duration);
 
     planName = 'Ongoing Daily Maintenance';
@@ -1077,12 +1076,12 @@ function calculate() {
       { k: 'Price per sachet', v: 'KSh ' + pricePerSachet },
       { k: 'Total sachets', v: totalSachets + ' sachets' },
       { k: 'Sachet subtotal', v: 'KSh ' + sachetSubtotal },
-      { k: 'Outer pouch + label fee', v: 'KSh ' + OUTER_POUCH_FEE },
+      { k: 'Delivery fee', v: 'KSh ' + DELIVERY_FEE_KIAMBU},
       { k: 'TOTAL (before delivery)', v: 'KSh ' + total, hl: true },
       { k: 'Daily water intake', v: water + ' litres minimum' },
     ], disclaimer);
 
-    orderMsg = `Hi Pumping Iron! I'd like to order.\n\nPlan: ${planName}\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\n\nSachet size: ${sachetGrams}g\nDuration: ${durObj.label}\nPrice per sachet: KSh ${pricePerSachet}\nTotal sachets: ${totalSachets}\nSachet subtotal: KSh ${sachetSubtotal}\nOuter pouch fee: KSh ${OUTER_POUCH_FEE}\nTOTAL: KSh ${total}\n\n${deliveryLine}\nPlease confirm and process my order.`;
+    orderMsg = `Hi Pumping Iron! I'd like to order.\n\nPlan: ${planName}\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\n\nSachet size: ${sachetGrams}g\nDuration: ${durObj.label}\nPrice per sachet: KSh ${pricePerSachet}\nTotal sachets: ${totalSachets}\nSachet subtotal: KSh ${sachetSubtotal}\nOuter pouch fee: KSh ${DELIVERY_FEE_KIAMBU}\nTOTAL: KSh ${total}\n\nPlease confirm and process my order.`;
     setWhatsapp(orderMsg);
   }
 }
@@ -1116,6 +1115,17 @@ const observer = new IntersectionObserver(entries => {
   entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
 }, { threshold: 0.1 });
 document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+function conditionalRenderDuration () {
+  const selection = document.getElementById("goal");
+  const hiddenSelect = document.getElementById("conditional-select");
+
+  if (selection.value === "loading") {
+    hiddenSelect.style.display = "none"
+  } else {
+    hiddenSelect.style.display = "block"
+  }
+}
 </script>
 </body>
 </html>
