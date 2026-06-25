@@ -202,14 +202,9 @@
             user-select: none;
         }
 
-        /* Hover: all stars to the left (in DOM order) light up */
+        /* Hover and checked states: all stars to the left light up */
         .star-group label:hover,
         .star-group label:hover~label,
-        .star-group input:checked~label {
-            color: var(--star-gold);
-        }
-
-        /* Keep gold state after click */
         .star-group input:checked~label {
             color: var(--star-gold);
         }
@@ -322,6 +317,13 @@
             border-color: var(--red);
         }
 
+        /* small helper */
+        .text-error {
+            color: var(--red);
+            font-size: 0.85rem;
+            margin-top: 0.3rem;
+        }
+
         footer {
             background: var(--dark);
             border-top: 1px solid var(--border);
@@ -390,6 +392,7 @@
                         </div>
 
                         <button type="submit" id="submitBtn" class="submit-btn">Submit Review</button>
+                        <div id="formFeedback" class="text-error" style="margin-top:0.5rem;"></div>
                     </form>
                 </div>
             </div>
@@ -415,11 +418,12 @@
     </footer>
 
     <script>
-        // ─── SUPABASE ──────────────────────────────────────────────────────
+        // ─── SUPABASE CONFIG ──────────────────────────────────────────────
         const SUPABASE_URL = "https://zhdpiscqxaowjrfidfis.supabase.co";
         const SUPABASE_ANON_KEY =
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpoZHBpc2NxeGFvd2pyZmlkZmlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNDEwNjQsImV4cCI6MjA5NzkxNzA2NH0.RH9CQ6uAYmwqBJaChQdXGrJjVJ6phIVhVBRfmm0Itec";
 
+        // ─── INIT CLIENT ──────────────────────────────────────────────────
         const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // ─── HELPERS ──────────────────────────────────────────────────────
@@ -449,7 +453,14 @@
                     .select('*')
                     .order('created_at', { ascending: false });
 
-                if (error) throw error;
+                if (error) {
+                    // If the table doesn't exist, error code is '42P01' (relation does not exist)
+                    console.error('Supabase fetch error:', error);
+                    container.innerHTML =
+                        `<div class="empty-state error">❌ Could not fetch reviews: ${error.message || 'Unknown error'}</div>`;
+                    counter.textContent = '⚠️';
+                    return;
+                }
 
                 const count = reviews?.length || 0;
                 counter.textContent = count + ' Review' + (count !== 1 ? 's' : '');
@@ -478,10 +489,10 @@
                 }
 
             } catch (err) {
-                console.error('Fetch error:', err);
+                console.error('Unexpected fetch error:', err);
                 container.innerHTML =
-                    '<div class="empty-state error">⚠️ Failed to load reviews. Please check your connection.</div>';
-                counter.textContent = '—';
+                    `<div class="empty-state error">⚠️ Unexpected error: ${err.message || 'Please try again later.'}</div>`;
+                counter.textContent = '⚠️';
             }
         }
 
@@ -493,13 +504,17 @@
             const nameEl = document.getElementById('athleteName');
             const textEl = document.getElementById('feedbackText');
             const ratingEl = document.querySelector('input[name="rating"]:checked');
+            const formFeedback = document.getElementById('formFeedback');
+
+            // Clear previous feedback
+            formFeedback.textContent = '';
 
             const name = nameEl.value.trim();
             const text = textEl.value.trim();
             const rating = ratingEl ? parseInt(ratingEl.value, 10) : null;
 
             if (!name || !text || !rating) {
-                alert('Please fill in all fields and select a rating.');
+                formFeedback.textContent = 'Please fill all fields and select a rating.';
                 return;
             }
 
@@ -507,22 +522,32 @@
             btn.textContent = 'Submitting…';
 
             try {
-                const { error } = await supabase
+                const { data, error } = await supabase
                     .from('reviews')
                     .insert([{ name, text, rating }]);
 
-                if (error) throw error;
+                if (error) {
+                    formFeedback.textContent = '❌ ' + (error.message || 'Insert failed.');
+                    console.error('Insert error:', error);
+                    return;
+                }
 
+                // Success: clear form and refresh
                 this.reset();
-                // Re-fetch and re-render
+                formFeedback.textContent = '✅ Review submitted!';
+                formFeedback.style.color = '#4CAF50';
                 await fetchAndRenderReviews();
 
             } catch (err) {
                 console.error('Submit error:', err);
-                alert('Could not post review. Please try again.');
+                formFeedback.textContent = '⚠️ ' + (err.message || 'Unexpected error.');
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Submit Review';
+                // reset color after a moment
+                setTimeout(() => {
+                    formFeedback.style.color = '';
+                }, 3000);
             }
         });
 
@@ -530,4 +555,4 @@
         window.addEventListener('DOMContentLoaded', fetchAndRenderReviews);
     </script>
 </body>
-    </html>
+</html>
