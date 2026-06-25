@@ -81,8 +81,22 @@
         /* CONTAINER SETUP */
         .wrapper {
             padding: 7rem 1.5rem 4rem;
-            max-width: 860px;
+            max-width: 1200px;
             margin: 0 auto;
+        }
+
+        .reviews-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            align-items: start;
+        }
+
+        @media (max-width: 768px) {
+            .reviews-layout {
+                grid-template-columns: 1fr;
+                gap: 2.5rem;
+            }
         }
 
         .section-label {
@@ -100,18 +114,9 @@
             font-family: var(--font-display);
             font-size: clamp(2.5rem, 8vw, 4.5rem);
             line-height: 1;
-            margin-bottom: 1rem;
+            margin-bottom: 2rem;
             text-align: center;
             text-transform: uppercase;
-        }
-
-        .section-sub {
-            font-size: 1rem;
-            color: var(--light);
-            max-width: 480px;
-            margin: 0 auto 3rem;
-            text-align: center;
-            line-height: 1.7;
         }
 
         /* REVIEW FORM SECTION */
@@ -120,7 +125,8 @@
             border: 1px solid var(--border);
             border-top: 3px solid var(--red);
             padding: 2.5rem 1.5rem;
-            margin-bottom: 4rem;
+            position: sticky;
+            top: 100px;
         }
 
         .form-heading {
@@ -206,7 +212,7 @@
         .submit-btn:hover { background: var(--red-dark); }
         .submit-btn:disabled { background: var(--border); color: var(--gray); cursor: not-allowed; }
 
-        /* FEED FEEDBACK HEADLINE */
+        /* FEED SECTION */
         .feed-header {
             display: flex;
             justify-content: space-between;
@@ -272,44 +278,53 @@
     </nav>
 
     <div class="wrapper">
-        <!-- <p class="section-label">Verified Performance Logs</p> -->
         <h1 class="section-title">Reviews</h1>
-        <!-- <p class="section-sub">Real results from lifters optimizing their supplementation profiles around Kiambu.</p> -->
 
-        <div class="review-box">
-            <div class="form-heading">Your Feedback</div>
-            <form id="submissionForm">
-                <div class="form-group">
-                    <label class="form-label" for="athleteName">Your Name / Gym Handle</label>
-                    <input class="form-input" type="text" id="athleteName" placeholder="e.g., Alex K. (Ruiru Hub)" required>
+        <div class="reviews-layout">
+            
+            <!-- LEFT: Review Form -->
+            <div>
+                <div class="review-box">
+                    <div class="form-heading">Your Feedback</div>
+                    <form id="submissionForm">
+                        <div class="form-group">
+                            <label class="form-label" for="athleteName">Your Name / Gym Handle</label>
+                            <input class="form-input" type="text" id="athleteName" placeholder="e.g., Alex K. (Ruiru Hub)" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Product Rating</label>
+                            <div class="star-rating-select">
+                                <input type="radio" id="star5" name="rating" value="5" required><label for="star5" title="5 Stars">★</label>
+                                <input type="radio" id="star4" name="rating" value="4"><label for="star4" title="4 Stars">★</label>
+                                <input type="radio" id="star3" name="rating" value="3"><label for="star3" title="3 Stars">★</label>
+                                <input type="radio" id="star2" name="rating" value="2"><label for="star2" title="2 Stars">★</label>
+                                <input type="radio" id="star1" name="rating" value="1"><label for="star1" title="1 Star">★</label>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="feedbackText">Leave a review</label>
+                            <textarea class="form-textarea" id="feedbackText" rows="5" placeholder="How has the custom weight dosing impacted your recovery or power output?" required></textarea>
+                        </div>
+
+                        <button type="submit" id="submitBtn" class="submit-btn">Submit Review</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- RIGHT: Published Reviews -->
+            <div>
+                <div class="feed-header">
+                    <span class="feed-title">Community Reviews</span>
+                    <span id="countDisplay" class="feed-count"></span>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label">Product Rating</label>
-                    <div class="star-rating-select">
-                        <input type="radio" id="star5" name="rating" value="5" required><label for="star5" title="5 Stars">★</label>
-                        <input type="radio" id="star4" name="rating" value="4"><label for="star4" title="4 Stars">★</label>
-                        <input type="radio" id="star3" name="rating" value="3"><label for="star3" title="3 Stars">★</label>
-                        <input type="radio" id="star2" name="rating" value="2"><label for="star2" title="2 Stars">★</label>
-                        <input type="radio" id="star1" name="rating" value="1"><label for="star1" title="1 Star">★</label>
-                    </div>
+                <div id="feedContainer">
+                    <div class="empty-state">Loading reviews...</div>
                 </div>
+            </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="feedbackText">Leave a review</label>
-                    <textarea class="form-textarea" id="feedbackText" rows="4" placeholder="How has the custom weight dosing impacted your recovery or power output?" required></textarea>
-                </div>
-
-                <button type="submit" id="submitBtn" class="submit-btn">Submit Review</button>
-            </form>
-        </div>
-
-        <div class="feed-header">
-            <span class="feed-title">Reviews</span>
-        </div>
-
-        <div id="feedContainer">
-            <div class="empty-state">Loading  data from network...</div>
         </div>
     </div>
 
@@ -322,16 +337,13 @@
         const SUPABASE_URL = "https://zhdpiscqxaowjrfidfis.supabase.co/rest/v1/"; 
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpoZHBpc2NxeGFvd2pyZmlkZmlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNDEwNjQsImV4cCI6MjA5NzkxNzA2NH0.RH9CQ6uAYmwqBJaChQdXGrJjVJ6phIVhVBRfmm0Itec";
 
-        // Initialize connection
         const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // Fetch and Render from the cloud
         async function fetchAndRenderReviews() {
             const box = document.getElementById('feedContainer');
             const counter = document.getElementById('countDisplay');
 
             try {
-                // Fetch reviews ordered by newest first
                 const { data: reviews, error } = await supabase
                     .from('reviews')
                     .select('*')
@@ -343,15 +355,13 @@
                 box.innerHTML = '';
 
                 if (reviews.length === 0) {
-                    box.innerHTML = `<div class="empty-state">No athlete logs documented yet. Be the first to drop your training feedback above!</div>`;
+                    box.innerHTML = `<div class="empty-state">No athlete logs documented yet. Be the first to drop your training feedback on the left!</div>`;
                     return;
                 }
 
                 reviews.forEach(item => {
                     const filledStars = '★'.repeat(item.rating);
                     const blankStars = '☆'.repeat(5 - item.rating);
-                    
-                    // Parse clean date
                     const dbDate = new Date(item.created_at);
                     const formattedDate = dbDate.toLocaleDateString('en-KE', { year: 'numeric', month: 'short', day: 'numeric' });
 
@@ -370,8 +380,7 @@
 
             } catch (err) {
                 console.error("Database connection failed:", err);
-                counter.innerText = "Error loading reviews";
-                box.innerHTML = `<div class="empty-state" style="color:var(--red);">Failed to connect to the central review log. Check internet connection.</div>`;
+                box.innerHTML = `<div class="empty-state" style="color:var(--red);">Failed to load reviews. Please check your connection.</div>`;
             }
         }
 
@@ -382,7 +391,6 @@
             }[char] || char));
         }
 
-        // Handle Submission to Cloud
         document.getElementById('submissionForm').addEventListener('submit', async function(event) {
             event.preventDefault();
             
@@ -395,7 +403,6 @@
             btn.innerText = "Syncing with cloud...";
 
             try {
-                // Insert into cloud table
                 const { error } = await supabase
                     .from('reviews')
                     .insert([{ name: handle, text: message, rating: ratingScore }]);
@@ -410,11 +417,10 @@
                 console.error(err);
             } finally {
                 btn.disabled = false;
-                btn.innerText = "Publish Performance Review";
+                btn.innerText = "Submit Review";
             }
         });
 
-        // Run on initial load
         window.addEventListener('DOMContentLoaded', fetchAndRenderReviews);
     </script>
 </body>
