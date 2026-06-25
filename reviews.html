@@ -172,27 +172,28 @@
         .form-input:focus, .form-textarea:focus { border-color: var(--red); }
         .form-input::placeholder, .form-textarea::placeholder { color: var(--border); }
 
-        /* STAR SELECTION */
+        /* IMPROVED STAR SELECTION */
         .star-rating-select {
             display: flex;
             flex-direction: row-reverse;
             justify-content: flex-end;
-            gap: 0.35rem;
+            gap: 0.4rem;
         }
 
         .star-rating-select input { display: none; }
 
         .star-rating-select label {
-            font-size: 2rem;
-            color: var(--border);
+            font-size: 2.2rem;
+            color: #555;
             cursor: pointer;
-            transition: color 0.1s ease;
+            transition: color 0.15s ease, transform 0.1s;
         }
 
         .star-rating-select label:hover,
         .star-rating-select label:hover \~ label,
         .star-rating-select input:checked \~ label {
             color: var(--star-gold);
+            transform: scale(1.1);
         }
 
         .submit-btn {
@@ -353,6 +354,7 @@
 
                 if (error) throw error;
 
+                // Fixed counter
                 counter.innerText = `\( {reviews.length} Review \){reviews.length !== 1 ? 's' : ''}`;
                 box.innerHTML = '';
 
