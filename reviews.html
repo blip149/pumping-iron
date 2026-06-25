@@ -7,10 +7,10 @@
     <meta name="description" content="Read verified reviews from athletes across Kiambu County using Pumping Iron's weight-calculated creatine pre-portioned sachets." />
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet" />
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
+        /* ==================== YOUR ORIGINAL STYLES (unchanged) ==================== */
         *,
         *::before,
         *::after {
@@ -202,7 +202,7 @@
             user-select: none;
         }
 
-        /* Hover and checked states: all stars to the left light up */
+        /* Hover and checked states (CSS fallback) */
         .star-group label:hover,
         .star-group label:hover\~label,
         .star-group input:checked\~label {
@@ -317,7 +317,6 @@
             border-color: var(--red);
         }
 
-        /* small helper */
         .text-error {
             color: var(--red);
             font-size: 0.85rem;
@@ -476,8 +475,7 @@
                 for (const item of reviews) {
                     const card = document.createElement('div');
                     card.className = 'review-card';
-                    card.innerHTML =
-                        `
+                    card.innerHTML = `
                         <div class="card-top">
                             <div class="athlete-name">${sanitize(item.name)}</div>
                             <div class="card-stars">${renderStars(item.rating)}</div>
@@ -546,6 +544,50 @@
                     formFeedback.style.color = '';
                 }, 3000);
             }
+        });
+
+        // ─── RELIABLE STAR RATING (JS enhancement - stars now glow perfectly) ───
+        document.addEventListener('DOMContentLoaded', () => {
+            const starGroup = document.getElementById('starSelector');
+            if (!starGroup) return;
+
+            const labels = Array.from(starGroup.querySelectorAll('label'));
+            const inputs = Array.from(starGroup.querySelectorAll('input[type="radio"]'));
+
+            // index 0 = visual rightmost (5 stars), index 4 = visual leftmost (1 star)
+            function setStarColors(ratingValue) {
+                labels.forEach((label, index) => {
+                    const starValue = 5 - index; // map DOM index to actual star value
+                    label.style.color = (starValue <= ratingValue) ? 'var(--star-gold)' : 'var(--star-dim)';
+                });
+            }
+
+            // When a radio is checked (via clicking any label)
+            inputs.forEach(input => {
+                input.addEventListener('change', () => {
+                    if (input.checked) {
+                        setStarColors(parseInt(input.value, 10));
+                    }
+                });
+            });
+
+            // Hover effect - preview the rating
+            labels.forEach((label, index) => {
+                const previewValue = 5 - index;
+
+                label.addEventListener('mouseenter', () => {
+                    setStarColors(previewValue);
+                });
+
+                label.addEventListener('mouseleave', () => {
+                    const checkedInput = starGroup.querySelector('input:checked');
+                    if (checkedInput) {
+                        setStarColors(parseInt(checkedInput.value, 10));
+                    } else {
+                        labels.forEach(l => l.style.color = 'var(--star-dim)');
+                    }
+                });
+            });
         });
 
         // ─── BOOT ──────────────────────────────────────────────────────────
