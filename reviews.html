@@ -427,7 +427,7 @@
                 if (error) throw error;
 
                 this.reset();
-                turnstileToken = null; // Reset Turnstile
+                turnstileToken = null;
                 formFeedback.style.color = '#4CAF50';
                 formFeedback.textContent = '✅ Review submitted successfully!';
                 await fetchAndRenderReviews();
@@ -439,6 +439,40 @@
                 btn.disabled = false;
                 btn.textContent = 'Submit Review';
             }
+        });
+
+        // === RELIABLE STAR RATING (JS) - This makes the stars light up properly ===
+        document.addEventListener('DOMContentLoaded', () => {
+            const starGroup = document.getElementById('starSelector');
+            if (!starGroup) return;
+
+            const labels = Array.from(starGroup.querySelectorAll('label'));
+            const inputs = Array.from(starGroup.querySelectorAll('input'));
+
+            function highlightUpTo(value) {
+                labels.forEach((label, i) => {
+                    const thisStarValue = 5 - i;
+                    label.style.color = (thisStarValue <= value) ? 'var(--star-gold)' : 'var(--star-dim)';
+                });
+            }
+
+            inputs.forEach(input => {
+                input.addEventListener('change', () => {
+                    if (input.checked) highlightUpTo(parseInt(input.value));
+                });
+            });
+
+            labels.forEach((label, i) => {
+                const value = 5 - i;
+                label.addEventListener('mouseenter', () => highlightUpTo(value));
+                label.addEventListener('mouseleave', () => {
+                    const checked = starGroup.querySelector('input:checked');
+                    highlightUpTo(checked ? parseInt(checked.value) : 0);
+                });
+            });
+
+            const initial = starGroup.querySelector('input:checked');
+            if (initial) highlightUpTo(parseInt(initial.value));
         });
 
         window.addEventListener('DOMContentLoaded', fetchAndRenderReviews);
