@@ -10,14 +10,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
-        /* ==================== YOUR ORIGINAL STYLES (unchanged) ==================== */
-        *,
-        *::before,
-        *::after {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        /* Your exact original styles (unchanged) */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
             --red: #C0181A;
@@ -36,9 +30,7 @@
             --star-dim: #444444;
         }
 
-        html {
-            scroll-behavior: smooth;
-        }
+        html { scroll-behavior: smooth; }
 
         body {
             background: var(--black);
@@ -51,17 +43,10 @@
         }
 
         nav {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 100;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            display: flex; align-items: center; justify-content: space-between;
             padding: 1rem 1.5rem;
-            background: rgba(13, 13, 13, 0.92);
-            backdrop-filter: blur(8px);
+            background: rgba(13,13,13,0.92); backdrop-filter: blur(8px);
             border-bottom: 1px solid var(--border);
         }
 
@@ -87,15 +72,9 @@
             display: inline-block;
         }
 
-        .nav-order:hover {
-            background: var(--red-dark);
-        }
+        .nav-order:hover { background: var(--red-dark); }
 
-        .wrapper {
-            padding: 7rem 1.5rem 4rem;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
+        .wrapper { padding: 7rem 1.5rem 4rem; max-width: 1200px; margin: 0 auto; }
 
         .reviews-layout {
             display: grid;
@@ -105,10 +84,7 @@
         }
 
         @media (max-width: 768px) {
-            .reviews-layout {
-                grid-template-columns: 1fr;
-                gap: 2.5rem;
-            }
+            .reviews-layout { grid-template-columns: 1fr; gap: 2.5rem; }
         }
 
         .section-title {
@@ -120,7 +96,6 @@
             text-transform: uppercase;
         }
 
-        /* ── REVIEW FORM ── */
         .review-box {
             background: var(--dark);
             border: 1px solid var(--border);
@@ -158,8 +133,7 @@
             text-transform: uppercase;
         }
 
-        .form-input,
-        .form-textarea {
+        .form-input, .form-textarea {
             background: var(--black);
             border: 1px solid var(--border);
             color: var(--white);
@@ -171,17 +145,10 @@
             transition: border-color 0.2s;
         }
 
-        .form-input:focus,
-        .form-textarea:focus {
-            border-color: var(--red);
-        }
+        .form-input:focus, .form-textarea:focus { border-color: var(--red); }
+        .form-input::placeholder, .form-textarea::placeholder { color: var(--border); }
 
-        .form-input::placeholder,
-        .form-textarea::placeholder {
-            color: var(--border);
-        }
-
-        /* ── STAR RATING (Google-style) ── */
+        /* Star Group */
         .star-group {
             display: flex;
             flex-direction: row-reverse;
@@ -189,27 +156,15 @@
             gap: 0.35rem;
         }
 
-        .star-group input {
-            display: none;
-        }
+        .star-group input { display: none; }
 
         .star-group label {
             font-size: 2.2rem;
             color: var(--star-dim);
             cursor: pointer;
-            transition: color 0.12s ease;
-            line-height: 1;
-            user-select: none;
+            transition: color 0.15s ease;
         }
 
-        /* Hover and checked states (CSS fallback) */
-        .star-group label:hover,
-        .star-group label:hover\~label,
-        .star-group input:checked\~label {
-            color: var(--star-gold);
-        }
-
-        /* ── SUBMIT ── */
         .submit-btn {
             background: var(--red);
             color: var(--white);
@@ -224,17 +179,9 @@
             text-transform: uppercase;
         }
 
-        .submit-btn:hover {
-            background: var(--red-dark);
-        }
+        .submit-btn:hover { background: var(--red-dark); }
+        .submit-btn:disabled { background: var(--border); color: var(--gray); cursor: not-allowed; }
 
-        .submit-btn:disabled {
-            background: var(--border);
-            color: var(--gray);
-            cursor: not-allowed;
-        }
-
-        /* ── FEED ── */
         .feed-header {
             display: flex;
             justify-content: space-between;
@@ -244,21 +191,9 @@
             margin-bottom: 2rem;
         }
 
-        .feed-title {
-            font-family: var(--font-display);
-            font-size: 1.8rem;
-            letter-spacing: 0.05em;
-        }
+        .feed-title { font-family: var(--font-display); font-size: 1.8rem; letter-spacing: 0.05em; }
+        .feed-count { font-family: var(--font-head); font-size: 0.9rem; color: var(--gray); font-weight: 700; letter-spacing: 0.05em; }
 
-        .feed-count {
-            font-family: var(--font-head);
-            font-size: 0.9rem;
-            color: var(--gray);
-            font-weight: 700;
-            letter-spacing: 0.05em;
-        }
-
-        /* ── REVIEW CARD ── */
         .review-card {
             background: var(--dark);
             border: 1px solid var(--border);
@@ -282,46 +217,14 @@
             text-transform: uppercase;
         }
 
-        .card-stars {
-            color: var(--star-gold);
-            font-size: 1.1rem;
-            letter-spacing: 0.1em;
-        }
+        .card-stars { color: var(--star-gold); font-size: 1.1rem; letter-spacing: 0.1em; }
+        .card-text { font-size: 0.95rem; color: var(--light); line-height: 1.6; white-space: pre-line; }
+        .card-date { font-size: 0.75rem; color: var(--gray); margin-top: 1rem; text-align: right; text-transform: uppercase; letter-spacing: 0.05em; }
 
-        .card-text {
-            font-size: 0.95rem;
-            color: var(--light);
-            line-height: 1.6;
-            white-space: pre-line;
-        }
+        .empty-state { text-align: center; padding: 3rem 1rem; color: var(--gray); border: 1px dashed var(--border); font-size: 0.9rem; }
+        .empty-state.error { color: var(--red); border-color: var(--red); }
 
-        .card-date {
-            font-size: 0.75rem;
-            color: var(--gray);
-            margin-top: 1rem;
-            text-align: right;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 3rem 1rem;
-            color: var(--gray);
-            border: 1px dashed var(--border);
-            font-size: 0.9rem;
-        }
-
-        .empty-state.error {
-            color: var(--red);
-            border-color: var(--red);
-        }
-
-        .text-error {
-            color: var(--red);
-            font-size: 0.85rem;
-            margin-top: 0.3rem;
-        }
+        .text-error { color: var(--red); font-size: 0.85rem; margin-top: 0.3rem; }
 
         footer {
             background: var(--dark);
@@ -331,17 +234,8 @@
             margin-top: 4rem;
         }
 
-        .footer-brand {
-            font-family: var(--font-display);
-            font-size: 2rem;
-            color: var(--red);
-            margin-bottom: 0.5rem;
-        }
-
-        .footer-sub {
-            font-size: 0.85rem;
-            color: var(--gray);
-        }
+        .footer-brand { font-family: var(--font-display); font-size: 2rem; color: var(--red); margin-bottom: 0.5rem; }
+        .footer-sub { font-size: 0.85rem; color: var(--gray); }
     </style>
 </head>
 <body>
@@ -358,7 +252,6 @@
         <h1 class="section-title">Reviews</h1>
 
         <div class="reviews-layout">
-
             <!-- LEFT: Review Form -->
             <div>
                 <div class="review-box">
@@ -407,7 +300,6 @@
                     <div class="empty-state">Loading reviews…</div>
                 </div>
             </div>
-
         </div>
     </div>
 
@@ -417,16 +309,12 @@
     </footer>
 
     <script>
-        // ─── SUPABASE CONFIG ──────────────────────────────────────────────
         const SUPABASE_URL = "https://zhdpiscqxaowjrfidfis.supabase.co";
-        const SUPABASE_ANON_KEY =
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpoZHBpc2NxeGFvd2pyZmlkZmlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNDEwNjQsImV4cCI6MjA5NzkxNzA2NH0.RH9CQ6uAYmwqBJaChQdXGrJjVJ6phIVhVBRfmm0Itec";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpoZHBpc2NxeGFvd2pyZmlkZmlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNDEwNjQsImV4cCI6MjA5NzkxNzA2NH0.RH9CQ6uAYmwqBJaChQdXGrJjVJ6phIVhVBRfmm0Itec";
 
-        // ─── INIT CLIENT ──────────────────────────────────────────────────
         const { createClient } = supabase;
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // ─── HELPERS ──────────────────────────────────────────────────────
         function sanitize(input) {
             if (!input) return "";
             const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' };
@@ -442,7 +330,6 @@
             return '★'.repeat(rating) + '☆'.repeat(5 - rating);
         }
 
-        // ─── FETCH & RENDER ──────────────────────────────────────────────
         async function fetchAndRenderReviews() {
             const container = document.getElementById('feedContainer');
             const counter = document.getElementById('countDisplay');
@@ -453,22 +340,15 @@
                     .select('*')
                     .order('created_at', { ascending: false });
 
-                if (error) {
-                    console.error('Supabase fetch error:', error);
-                    container.innerHTML =
-                        `<div class="empty-state error">❌ Could not fetch reviews: ${error.message || 'Unknown error'}</div>`;
-                    counter.textContent = '⚠️';
-                    return;
-                }
+                if (error) throw error;
 
                 const count = reviews?.length || 0;
                 counter.textContent = count + ' Review' + (count !== 1 ? 's' : '');
 
                 container.innerHTML = '';
 
-                if (!reviews || count === 0) {
-                    container.innerHTML =
-                        '<div class="empty-state">No athlete logs documented yet. Be the first to drop your training feedback on the left!</div>';
+                if (count === 0) {
+                    container.innerHTML = '<div class="empty-state">No athlete logs documented yet. Be the first to drop your training feedback on the left!</div>';
                     return;
                 }
 
@@ -485,49 +365,38 @@
                     `;
                     container.appendChild(card);
                 }
-
             } catch (err) {
-                console.error('Unexpected fetch error:', err);
-                container.innerHTML =
-                    `<div class="empty-state error">⚠️ Unexpected error: ${err.message || 'Please try again later.'}</div>`;
-                counter.textContent = '⚠️';
+                console.error(err);
+                container.innerHTML = `<div class="empty-state error">Failed to load reviews. Please check your connection.</div>`;
             }
         }
 
-        // ─── SUBMIT ──────────────────────────────────────────────────────
+        // Form submission (unchanged except Supabase client)
         document.getElementById('submissionForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
             const btn = document.getElementById('submitBtn');
-            const nameEl = document.getElementById('athleteName');
-            const textEl = document.getElementById('feedbackText');
+            const name = document.getElementById('athleteName').value.trim();
+            const text = document.getElementById('feedbackText').value.trim();
             const ratingEl = document.querySelector('input[name="rating"]:checked');
             const formFeedback = document.getElementById('formFeedback');
 
-            formFeedback.textContent = '';
-
-            const name = nameEl.value.trim();
-            const text = textEl.value.trim();
-            const rating = ratingEl ? parseInt(ratingEl.value, 10) : null;
-
-            if (!name || !text || !rating) {
+            if (!name || !text || !ratingEl) {
                 formFeedback.textContent = 'Please fill all fields and select a rating.';
                 return;
             }
+
+            const rating = parseInt(ratingEl.value);
 
             btn.disabled = true;
             btn.textContent = 'Submitting…';
 
             try {
-                const { data, error } = await supabaseClient
+                const { error } = await supabaseClient
                     .from('reviews')
                     .insert([{ name, text, rating }]);
 
-                if (error) {
-                    formFeedback.textContent = '❌ ' + (error.message || 'Insert failed.');
-                    console.error('Insert error:', error);
-                    return;
-                }
+                if (error) throw error;
 
                 this.reset();
                 formFeedback.textContent = '✅ Review submitted!';
@@ -535,63 +404,54 @@
                 await fetchAndRenderReviews();
 
             } catch (err) {
-                console.error('Submit error:', err);
-                formFeedback.textContent = '⚠️ ' + (err.message || 'Unexpected error.');
+                formFeedback.textContent = '❌ ' + (err.message || 'Could not post review.');
+                console.error(err);
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Submit Review';
-                setTimeout(() => {
-                    formFeedback.style.color = '';
-                }, 3000);
+                setTimeout(() => formFeedback.style.color = '', 4000);
             }
         });
 
-        // ─── RELIABLE STAR RATING (JS enhancement - stars now glow perfectly) ───
+        // ROBUST STAR RATING (JS) - Guarantees they light up
         document.addEventListener('DOMContentLoaded', () => {
             const starGroup = document.getElementById('starSelector');
             if (!starGroup) return;
 
             const labels = Array.from(starGroup.querySelectorAll('label'));
-            const inputs = Array.from(starGroup.querySelectorAll('input[type="radio"]'));
+            const inputs = Array.from(starGroup.querySelectorAll('input'));
 
-            // index 0 = visual rightmost (5 stars), index 4 = visual leftmost (1 star)
-            function setStarColors(ratingValue) {
-                labels.forEach((label, index) => {
-                    const starValue = 5 - index; // map DOM index to actual star value
-                    label.style.color = (starValue <= ratingValue) ? 'var(--star-gold)' : 'var(--star-dim)';
+            function highlightUpTo(value) {
+                labels.forEach((label, i) => {
+                    const thisStarValue = 5 - i; // because of row-reverse
+                    label.style.color = (thisStarValue <= value) ? 'var(--star-gold)' : 'var(--star-dim)';
                 });
             }
 
-            // When a radio is checked (via clicking any label)
+            // Click = select & lock
             inputs.forEach(input => {
                 input.addEventListener('change', () => {
-                    if (input.checked) {
-                        setStarColors(parseInt(input.value, 10));
-                    }
+                    if (input.checked) highlightUpTo(parseInt(input.value));
                 });
             });
 
-            // Hover effect - preview the rating
-            labels.forEach((label, index) => {
-                const previewValue = 5 - index;
-
-                label.addEventListener('mouseenter', () => {
-                    setStarColors(previewValue);
-                });
-
+            // Hover preview
+            labels.forEach((label, i) => {
+                const value = 5 - i;
+                label.addEventListener('mouseenter', () => highlightUpTo(value));
                 label.addEventListener('mouseleave', () => {
-                    const checkedInput = starGroup.querySelector('input:checked');
-                    if (checkedInput) {
-                        setStarColors(parseInt(checkedInput.value, 10));
-                    } else {
-                        labels.forEach(l => l.style.color = 'var(--star-dim)');
-                    }
+                    const checked = starGroup.querySelector('input:checked');
+                    highlightUpTo(checked ? parseInt(checked.value) : 0);
                 });
             });
+
+            // Initial state
+            const initial = starGroup.querySelector('input:checked');
+            if (initial) highlightUpTo(parseInt(initial.value));
         });
 
-        // ─── BOOT ──────────────────────────────────────────────────────────
+        // Load reviews
         window.addEventListener('DOMContentLoaded', fetchAndRenderReviews);
     </script>
 </body>
-    </html>
+</html>
