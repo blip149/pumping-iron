@@ -33,6 +33,7 @@
             --font-head: 'Barlow Condensed', sans-serif;
             --font-body: 'Inter', sans-serif;
             --star-gold: #FFC107;
+            --star-dim: #444444;
         }
 
         html {
@@ -49,7 +50,6 @@
             padding-bottom: 5rem;
         }
 
-        /* NAV */
         nav {
             position: fixed;
             top: 0;
@@ -91,7 +91,6 @@
             background: var(--red-dark);
         }
 
-        /* CONTAINER SETUP */
         .wrapper {
             padding: 7rem 1.5rem 4rem;
             max-width: 1200px;
@@ -112,17 +111,6 @@
             }
         }
 
-        .section-label {
-            font-family: var(--font-head);
-            font-size: 0.8rem;
-            font-weight: 600;
-            letter-spacing: 0.25em;
-            color: var(--red);
-            text-transform: uppercase;
-            margin-bottom: 0.5rem;
-            text-align: center;
-        }
-
         .section-title {
             font-family: var(--font-display);
             font-size: clamp(2.5rem, 8vw, 4.5rem);
@@ -132,7 +120,7 @@
             text-transform: uppercase;
         }
 
-        /* REVIEW FORM SECTION */
+        /* ── REVIEW FORM ── */
         .review-box {
             background: var(--dark);
             border: 1px solid var(--border);
@@ -193,31 +181,40 @@
             color: var(--border);
         }
 
-        /* STAR SELECTION */
-        .star-rating-select {
+        /* ── STAR RATING (Google-style) ── */
+        .star-group {
             display: flex;
             flex-direction: row-reverse;
             justify-content: flex-end;
             gap: 0.35rem;
         }
 
-        .star-rating-select input {
+        .star-group input {
             display: none;
         }
 
-        .star-rating-select label {
-            font-size: 2rem;
-            color: var(--border);
+        .star-group label {
+            font-size: 2.2rem;
+            color: var(--star-dim);
             cursor: pointer;
-            transition: color 0.1s ease;
+            transition: color 0.12s ease;
+            line-height: 1;
+            user-select: none;
         }
 
-        .star-rating-select label:hover,
-        .star-rating-select label:hover~label,
-        .star-rating-select input:checked~label {
+        /* Hover: all stars to the left (in DOM order) light up */
+        .star-group label:hover,
+        .star-group label:hover~label,
+        .star-group input:checked~label {
             color: var(--star-gold);
         }
 
+        /* Keep gold state after click */
+        .star-group input:checked~label {
+            color: var(--star-gold);
+        }
+
+        /* ── SUBMIT ── */
         .submit-btn {
             background: var(--red);
             color: var(--white);
@@ -242,7 +239,7 @@
             cursor: not-allowed;
         }
 
-        /* FEED SECTION */
+        /* ── FEED ── */
         .feed-header {
             display: flex;
             justify-content: space-between;
@@ -266,7 +263,7 @@
             letter-spacing: 0.05em;
         }
 
-        /* REVIEW CARD ITEM */
+        /* ── REVIEW CARD ── */
         .review-card {
             background: var(--dark);
             border: 1px solid var(--border);
@@ -373,12 +370,17 @@
 
                         <div class="form-group">
                             <label class="form-label">Product Rating</label>
-                            <div class="star-rating-select">
-                                <input type="radio" id="star5" name="rating" value="5" required /><label for="star5" title="5 Stars">★</label>
-                                <input type="radio" id="star4" name="rating" value="4" /><label for="star4" title="4 Stars">★</label>
-                                <input type="radio" id="star3" name="rating" value="3" /><label for="star3" title="3 Stars">★</label>
-                                <input type="radio" id="star2" name="rating" value="2" /><label for="star2" title="2 Stars">★</label>
-                                <input type="radio" id="star1" name="rating" value="1" /><label for="star1" title="1 Star">★</label>
+                            <div class="star-group" id="starSelector">
+                                <input type="radio" id="star5" name="rating" value="5" required />
+                                <label for="star5" title="5 Stars">★</label>
+                                <input type="radio" id="star4" name="rating" value="4" />
+                                <label for="star4" title="4 Stars">★</label>
+                                <input type="radio" id="star3" name="rating" value="3" />
+                                <label for="star3" title="3 Stars">★</label>
+                                <input type="radio" id="star2" name="rating" value="2" />
+                                <label for="star2" title="2 Stars">★</label>
+                                <input type="radio" id="star1" name="rating" value="1" />
+                                <label for="star1" title="1 Star">★</label>
                             </div>
                         </div>
 
@@ -413,42 +415,27 @@
     </footer>
 
     <script>
-        // ─── SUPABASE CONFIG ────────────────────────────────────────────────
-        // Base URL (without /rest/v1/) — createClient() adds the rest path internally.
+        // ─── SUPABASE ──────────────────────────────────────────────────────
         const SUPABASE_URL = "https://zhdpiscqxaowjrfidfis.supabase.co";
         const SUPABASE_ANON_KEY =
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpoZHBpc2NxeGFvd2pyZmlkZmlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNDEwNjQsImV4cCI6MjA5NzkxNzA2NH0.RH9CQ6uAYmwqBJaChQdXGrJjVJ6phIVhVBRfmm0Itec";
 
         const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // ─── HELPERS ────────────────────────────────────────────────────────
-        function sanitizeInput(input) {
+        // ─── HELPERS ──────────────────────────────────────────────────────
+        function sanitize(input) {
             if (!input) return "";
-            const map = {
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                "'": '&#39;',
-                '"': '&quot;'
-            };
-            return input.replace(/[&<>'"]/g, function(ch) {
-                return map[ch];
-            });
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' };
+            return input.replace(/[&<>'"]/g, (ch) => map[ch] || ch);
         }
 
-        function formatDate(dateString) {
-            const d = new Date(dateString);
-            return d.toLocaleDateString('en-KE', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric'
-            });
+        function formatDate(iso) {
+            const d = new Date(iso);
+            return d.toLocaleDateString('en-KE', { year: 'numeric', month: 'short', day: 'numeric' });
         }
 
         function renderStars(rating) {
-            const filled = '★'.repeat(rating);
-            const empty = '☆'.repeat(5 - rating);
-            return filled + empty;
+            return '★'.repeat(rating) + '☆'.repeat(5 - rating);
         }
 
         // ─── FETCH & RENDER ──────────────────────────────────────────────
@@ -464,61 +451,51 @@
 
                 if (error) throw error;
 
-                // Update counter
-                const count = reviews ? reviews.length : 0;
+                const count = reviews?.length || 0;
                 counter.textContent = count + ' Review' + (count !== 1 ? 's' : '');
 
-                // Clear container
                 container.innerHTML = '';
 
-                if (!reviews || reviews.length === 0) {
+                if (!reviews || count === 0) {
                     container.innerHTML =
                         '<div class="empty-state">No athlete logs documented yet. Be the first to drop your training feedback on the left!</div>';
                     return;
                 }
 
-                // Build each card
-                reviews.forEach(function(item) {
+                for (const item of reviews) {
                     const card = document.createElement('div');
                     card.className = 'review-card';
-
-                    const starsHtml = renderStars(item.rating);
-                    const safeName = sanitizeInput(item.name);
-                    const safeText = sanitizeInput(item.text);
-                    const dateStr = formatDate(item.created_at);
-
                     card.innerHTML =
                         `
                         <div class="card-top">
-                            <div class="athlete-name">${safeName}</div>
-                            <div class="card-stars">${starsHtml}</div>
+                            <div class="athlete-name">${sanitize(item.name)}</div>
+                            <div class="card-stars">${renderStars(item.rating)}</div>
                         </div>
-                        <div class="card-text">${safeText}</div>
-                        <div class="card-date">${dateStr}</div>
+                        <div class="card-text">${sanitize(item.text)}</div>
+                        <div class="card-date">${formatDate(item.created_at)}</div>
                     `;
-
                     container.appendChild(card);
-                });
+                }
 
             } catch (err) {
-                console.error('Supabase fetch error:', err);
+                console.error('Fetch error:', err);
                 container.innerHTML =
-                    '<div class="empty-state error">⚠️ Failed to load reviews. Please check your connection and try again.</div>';
+                    '<div class="empty-state error">⚠️ Failed to load reviews. Please check your connection.</div>';
                 counter.textContent = '—';
             }
         }
 
-        // ─── SUBMIT FORM ──────────────────────────────────────────────────
-        document.getElementById('submissionForm').addEventListener('submit', async function(event) {
-            event.preventDefault();
+        // ─── SUBMIT ──────────────────────────────────────────────────────
+        document.getElementById('submissionForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
 
             const btn = document.getElementById('submitBtn');
-            const nameInput = document.getElementById('athleteName');
-            const textInput = document.getElementById('feedbackText');
+            const nameEl = document.getElementById('athleteName');
+            const textEl = document.getElementById('feedbackText');
             const ratingEl = document.querySelector('input[name="rating"]:checked');
 
-            const name = nameInput.value.trim();
-            const text = textInput.value.trim();
+            const name = nameEl.value.trim();
+            const text = textEl.value.trim();
             const rating = ratingEl ? parseInt(ratingEl.value, 10) : null;
 
             if (!name || !text || !rating) {
@@ -532,17 +509,12 @@
             try {
                 const { error } = await supabase
                     .from('reviews')
-                    .insert([{
-                        name: name,
-                        text: text,
-                        rating: rating
-                    }]);
+                    .insert([{ name, text, rating }]);
 
                 if (error) throw error;
 
-                // Reset form
                 this.reset();
-                // Re-render the list
+                // Re-fetch and re-render
                 await fetchAndRenderReviews();
 
             } catch (err) {
@@ -557,5 +529,5 @@
         // ─── BOOT ──────────────────────────────────────────────────────────
         window.addEventListener('DOMContentLoaded', fetchAndRenderReviews);
     </script>
-</body> 
-</html>
+</body>
+    </html>
