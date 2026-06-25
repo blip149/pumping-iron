@@ -7,10 +7,12 @@
     <meta name="description" content="Read verified reviews from athletes across Kiambu County using Pumping Iron's weight-calculated creatine pre-portioned sachets." />
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet" />
 
+    <!-- Cloudflare Turnstile -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
-        /* Your exact original styles (unchanged) */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
@@ -43,10 +45,15 @@
         }
 
         nav {
-            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-            display: flex; align-items: center; justify-content: space-between;
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             padding: 1rem 1.5rem;
-            background: rgba(13,13,13,0.92); backdrop-filter: blur(8px);
+            background: rgba(13,13,13,0.92);
+            backdrop-filter: blur(8px);
             border-bottom: 1px solid var(--border);
         }
 
@@ -74,7 +81,11 @@
 
         .nav-order:hover { background: var(--red-dark); }
 
-        .wrapper { padding: 7rem 1.5rem 4rem; max-width: 1200px; margin: 0 auto; }
+        .wrapper {
+            padding: 7rem 1.5rem 4rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
 
         .reviews-layout {
             display: grid;
@@ -148,7 +159,6 @@
         .form-input:focus, .form-textarea:focus { border-color: var(--red); }
         .form-input::placeholder, .form-textarea::placeholder { color: var(--border); }
 
-        /* Star Group */
         .star-group {
             display: flex;
             flex-direction: row-reverse;
@@ -252,6 +262,7 @@
         <h1 class="section-title">Reviews</h1>
 
         <div class="reviews-layout">
+
             <!-- LEFT: Review Form -->
             <div>
                 <div class="review-box">
@@ -283,6 +294,11 @@
                             <textarea class="form-textarea" id="feedbackText" rows="5" placeholder="How has the custom weight dosing impacted your recovery or power output?" required></textarea>
                         </div>
 
+                        <!-- Cloudflare Turnstile -->
+                        <div class="form-group">
+                            <div class="cf-turnstile" data-sitekey="0x4AAAAAADrEZ8wp9aCMBqLP" data-callback="onTurnstileSuccess" data-action="review_submit"></div>
+                        </div>
+
                         <button type="submit" id="submitBtn" class="submit-btn">Submit Review</button>
                         <div id="formFeedback" class="text-error" style="margin-top:0.5rem;"></div>
                     </form>
@@ -300,6 +316,7 @@
                     <div class="empty-state">Loading reviews…</div>
                 </div>
             </div>
+
         </div>
     </div>
 
@@ -314,6 +331,12 @@
 
         const { createClient } = supabase;
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let turnstileToken = null;
+
+        function onTurnstileSuccess(token) {
+            turnstileToken = token;
+        }
 
         function sanitize(input) {
             if (!input) return "";
@@ -348,7 +371,7 @@
                 container.innerHTML = '';
 
                 if (count === 0) {
-                    container.innerHTML = '<div class="empty-state">No athlete logs documented yet. Be the first to drop your training feedback on the left!</div>';
+                    container.innerHTML = '<div class="empty-state">No athlete logs documented yet. Be the first!</div>';
                     return;
                 }
 
@@ -367,11 +390,10 @@
                 }
             } catch (err) {
                 console.error(err);
-                container.innerHTML = `<div class="empty-state error">Failed to load reviews. Please check your connection.</div>`;
+                container.innerHTML = `<div class="empty-state error">Failed to load reviews.</div>`;
             }
         }
 
-        // Form submission (unchanged except Supabase client)
         document.getElementById('submissionForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
@@ -386,10 +408,16 @@
                 return;
             }
 
+            if (!turnstileToken) {
+                formFeedback.textContent = 'Please complete the verification.';
+                return;
+            }
+
             const rating = parseInt(ratingEl.value);
 
             btn.disabled = true;
             btn.textContent = 'Submitting…';
+            formFeedback.textContent = '';
 
             try {
                 const { error } = await supabaseClient
@@ -399,59 +427,21 @@
                 if (error) throw error;
 
                 this.reset();
-                formFeedback.textContent = '✅ Review submitted!';
+                turnstileToken = null; // Reset Turnstile
                 formFeedback.style.color = '#4CAF50';
+                formFeedback.textContent = '✅ Review submitted successfully!';
                 await fetchAndRenderReviews();
 
             } catch (err) {
-                formFeedback.textContent = '❌ ' + (err.message || 'Could not post review.');
                 console.error(err);
+                formFeedback.textContent = '❌ Could not post review. Please try again.';
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Submit Review';
-                setTimeout(() => formFeedback.style.color = '', 4000);
             }
         });
 
-        // ROBUST STAR RATING (JS) - Guarantees they light up
-        document.addEventListener('DOMContentLoaded', () => {
-            const starGroup = document.getElementById('starSelector');
-            if (!starGroup) return;
-
-            const labels = Array.from(starGroup.querySelectorAll('label'));
-            const inputs = Array.from(starGroup.querySelectorAll('input'));
-
-            function highlightUpTo(value) {
-                labels.forEach((label, i) => {
-                    const thisStarValue = 5 - i; // because of row-reverse
-                    label.style.color = (thisStarValue <= value) ? 'var(--star-gold)' : 'var(--star-dim)';
-                });
-            }
-
-            // Click = select & lock
-            inputs.forEach(input => {
-                input.addEventListener('change', () => {
-                    if (input.checked) highlightUpTo(parseInt(input.value));
-                });
-            });
-
-            // Hover preview
-            labels.forEach((label, i) => {
-                const value = 5 - i;
-                label.addEventListener('mouseenter', () => highlightUpTo(value));
-                label.addEventListener('mouseleave', () => {
-                    const checked = starGroup.querySelector('input:checked');
-                    highlightUpTo(checked ? parseInt(checked.value) : 0);
-                });
-            });
-
-            // Initial state
-            const initial = starGroup.querySelector('input:checked');
-            if (initial) highlightUpTo(parseInt(initial.value));
-        });
-
-        // Load reviews
         window.addEventListener('DOMContentLoaded', fetchAndRenderReviews);
     </script>
 </body>
-</html>
+    </html>
