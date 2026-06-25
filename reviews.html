@@ -4,432 +4,267 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Athlete Reviews — Pumping Iron Creatine</title>
-    <meta name="description" content="Read verified reviews from athletes across Kiambu County using Pumping Iron's weight-calculated creatine pre-portioned sachets.">
+    <meta name="description" content="Real reviews from athletes using Pumping Iron Creatine in Kiambu.">
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
-    
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
         :root {
             --red: #C0181A;
-            --red-dark: #8B0F11;
-            --black: #0D0D0D;
             --dark: #1A1A1A;
-            --border: #333333;
-            --gray: #888888;
-            --light: #CCCCCC;
-            --white: #F5F5F5;
-            --font-display: 'Bebas Neue', sans-serif;
-            --font-head: 'Barlow Condensed', sans-serif;
-            --font-body: 'Inter', sans-serif;
-            --star-gold: #FFC107;
+            --border: #333;
+            --gray: #888;
+            --light: #CCC;
         }
-
-        html { scroll-behavior: smooth; }
-
+        * { box-sizing: border-box; margin:0; padding:0; }
         body {
-            background: var(--black);
-            color: var(--white);
-            font-family: var(--font-body);
-            font-size: 16px;
+            background: #0D0D0D;
+            color: white;
+            font-family: 'Inter', sans-serif;
             line-height: 1.6;
-            overflow-x: hidden;
-            padding-bottom: 5rem;
         }
-
-        /* NAV */
         nav {
             position: fixed;
             top: 0; left: 0; right: 0;
-            z-index: 100;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 1rem 1.5rem;
-            background: rgba(13,13,13,0.92);
+            background: rgba(13,13,13,0.95);
             backdrop-filter: blur(8px);
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
             border-bottom: 1px solid var(--border);
         }
-
-        .nav-brand {
-            font-family: var(--font-display);
-            font-size: 1.6rem;
-            color: var(--red);
-            letter-spacing: 0.05em;
-            text-decoration: none;
-        }
-
+        .nav-brand { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; color: var(--red); }
         .nav-order {
             background: var(--red);
-            color: var(--white);
-            font-family: var(--font-head);
-            font-size: 1rem;
+            color: white;
+            padding: 0.6rem 1.2rem;
             font-weight: 700;
-            letter-spacing: 0.08em;
-            padding: 0.5rem 1.2rem;
-            cursor: pointer;
             text-decoration: none;
-            display: inline-block;
+            border-radius: 4px;
         }
 
-        .nav-order:hover { background: var(--red-dark); }
-
-        /* CONTAINER */
-        .wrapper {
-            padding: 7rem 1.5rem 4rem;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        .section-title {
-            font-family: var(--font-display);
-            font-size: clamp(2.5rem, 8vw, 4.5rem);
-            line-height: 1;
-            margin-bottom: 2.5rem;
-            text-align: center;
-            text-transform: uppercase;
-        }
+        .wrapper { padding: 80px 1rem 4rem; max-width: 1000px; margin: 0 auto; }
+        h1 { font-family: 'Bebas Neue', sans-serif; font-size: 2.8rem; text-align: center; margin-bottom: 2rem; text-transform: uppercase; }
 
         .reviews-layout {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 3rem;
-            align-items: start;
+            gap: 2rem;
         }
-
         @media (max-width: 768px) {
-            .reviews-layout {
-                grid-template-columns: 1fr;
-                gap: 2.5rem;
-            }
+            .reviews-layout { grid-template-columns: 1fr; }
         }
 
-        /* REVIEW FORM */
         .review-box {
             background: var(--dark);
             border: 1px solid var(--border);
-            border-top: 3px solid var(--red);
-            padding: 2.5rem 1.5rem;
+            border-top: 4px solid var(--red);
+            padding: 2rem;
+            border-radius: 8px;
             position: sticky;
-            top: 100px;
+            top: 90px;
         }
 
-        .form-heading {
-            font-family: var(--font-head);
-            font-size: 1.2rem;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: var(--white);
-            margin-bottom: 1.5rem;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 0.5rem;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .form-label {
-            font-family: var(--font-head);
-            font-size: 0.85rem;
-            font-weight: 600;
-            letter-spacing: 0.15em;
-            color: var(--gray);
-            text-transform: uppercase;
-        }
-
-        .form-input, .form-textarea {
-            background: var(--black);
-            border: 1px solid var(--border);
-            color: var(--white);
-            font-family: var(--font-body);
-            font-size: 1rem;
-            padding: 0.85rem 1rem;
+        .form-group { margin-bottom: 1.5rem; }
+        label { display: block; margin-bottom: 0.5rem; color: var(--gray); font-weight: 600; font-size: 0.9rem; }
+        input, textarea {
             width: 100%;
-            outline: none;
-            transition: border-color 0.2s;
+            background: #111;
+            border: 1px solid var(--border);
+            color: white;
+            padding: 0.9rem;
+            border-radius: 4px;
         }
-
-        .form-input:focus, .form-textarea:focus { border-color: var(--red); }
-        .form-input::placeholder, .form-textarea::placeholder { color: var(--border); }
-
         .star-rating-select {
+            font-size: 2.2rem;
             display: flex;
             flex-direction: row-reverse;
             justify-content: flex-end;
-            gap: 0.35rem;
+            gap: 4px;
         }
-
-        .star-rating-select input { display: none; }
-
-        .star-rating-select label {
-            font-size: 2rem;
-            color: var(--border);
-            cursor: pointer;
-            transition: color 0.1s ease;
-        }
-
+        .star-rating-select label { cursor: pointer; color: #444; }
         .star-rating-select label:hover,
         .star-rating-select label:hover \~ label,
-        .star-rating-select input:checked \~ label {
-            color: var(--star-gold);
-        }
+        .star-rating-select input:checked \~ label { color: #FFC107; }
 
-        .submit-btn {
+        button.submit-btn {
             background: var(--red);
-            color: var(--white);
-            font-family: var(--font-display);
-            font-size: 1.4rem;
-            letter-spacing: 0.1em;
-            padding: 1rem;
+            color: white;
             border: none;
-            cursor: pointer;
+            padding: 1rem;
             width: 100%;
-            transition: background 0.2s;
-            text-transform: uppercase;
+            font-size: 1.3rem;
+            font-weight: 700;
+            border-radius: 4px;
+            cursor: pointer;
         }
 
-        .submit-btn:hover { background: var(--red-dark); }
-        .submit-btn:disabled { background: var(--border); color: var(--gray); cursor: not-allowed; }
-
-        /* REVIEWS FEED */
         .feed-header {
             display: flex;
             justify-content: space-between;
-            align-items: baseline;
-            border-bottom: 2px solid var(--border);
+            align-items: center;
+            margin-bottom: 1.5rem;
             padding-bottom: 0.5rem;
-            margin-bottom: 2rem;
+            border-bottom: 2px solid var(--border);
         }
-
-        .feed-title { font-family: var(--font-display); font-size: 1.8rem; letter-spacing: 0.05em; }
-        .feed-count { font-family: var(--font-head); font-size: 0.9rem; color: var(--gray); font-weight: 700; letter-spacing: 0.05em; }
 
         .review-card {
             background: var(--dark);
             border: 1px solid var(--border);
             padding: 1.5rem;
-            margin-bottom: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
         }
 
-        .card-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.75rem;
-        }
-
-        .athlete-name {
-            font-family: var(--font-head);
-            font-size: 1.1rem;
-            font-weight: 700;
-            letter-spacing: 0.05em;
-            color: var(--white);
-            text-transform: uppercase;
-        }
-
-        .card-stars { color: var(--star-gold); font-size: 1.1rem; letter-spacing: 0.1em; }
-        .card-text { font-size: 0.95rem; color: var(--light); line-height: 1.6; white-space: pre-line; }
-        .card-date { font-size: 0.75rem; color: var(--gray); margin-top: 1rem; text-align: right; text-transform: uppercase; letter-spacing: 0.05em; }
-
-        .empty-state { 
-            text-align: center; 
-            padding: 3rem 1rem; 
-            color: var(--gray); 
-            border: 1px dashed var(--border); 
-            font-size: 0.9rem; 
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--gray);
+            border: 1px dashed var(--border);
             border-radius: 8px;
         }
 
-        footer {
-            background: var(--dark);
-            border-top: 1px solid var(--border);
-            padding: 2rem 1.5rem;
-            text-align: center;
-            margin-top: 4rem;
-        }
-
-        .footer-brand { font-family: var(--font-display); font-size: 2rem; color: var(--red); margin-bottom: 0.5rem; }
-        .footer-sub { font-size: 0.85rem; color: var(--gray); }
+        footer { text-align: center; padding: 3rem 1rem; color: var(--gray); font-size: 0.9rem; }
     </style>
 </head>
 <body>
 
     <nav>
         <span class="nav-brand">PUMPING IRON</span>
-        <div style="display:flex; gap:1.25rem; align-items:center;">
-            <a href="index.html" class="nav-brand">Home</a>
-            <a class="nav-order" href="index.html#calculator">GET MY DOSE</a>
-        </div>
+        <a href="/" class="nav-order">GET MY DOSE</a>
     </nav>
 
     <div class="wrapper">
-        <h1 class="section-title">Athlete Reviews</h1>
+        <h1>Reviews</h1>
 
         <div class="reviews-layout">
-            
-            <!-- LEFT: Review Form -->
+            <!-- Form -->
             <div>
                 <div class="review-box">
-                    <div class="form-heading">Share Your Experience</div>
+                    <h2 style="margin-bottom:1rem; color:white;">Share Your Experience</h2>
                     <form id="submissionForm">
                         <div class="form-group">
-                            <label class="form-label" for="athleteName">Your Name / Gym Handle</label>
-                            <input class="form-input" type="text" id="athleteName" placeholder="e.g., Alex K. (Ruiru Hub)" required>
+                            <label>Your Name</label>
+                            <input type="text" id="athleteName" placeholder="e.g. Peter (Ruiru)" required>
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">Product Rating</label>
+                            <label>Rating</label>
                             <div class="star-rating-select">
-                                <input type="radio" id="star5" name="rating" value="5" required><label for="star5" title="5 Stars">★</label>
-                                <input type="radio" id="star4" name="rating" value="4"><label for="star4" title="4 Stars">★</label>
-                                <input type="radio" id="star3" name="rating" value="3"><label for="star3" title="3 Stars">★</label>
-                                <input type="radio" id="star2" name="rating" value="2"><label for="star2" title="2 Stars">★</label>
-                                <input type="radio" id="star1" name="rating" value="1"><label for="star1" title="1 Star">★</label>
+                                <input type="radio" id="s5" name="rating" value="5" required><label for="s5">★</label>
+                                <input type="radio" id="s4" name="rating" value="4"><label for="s4">★</label>
+                                <input type="radio" id="s3" name="rating" value="3"><label for="s3">★</label>
+                                <input type="radio" id="s2" name="rating" value="2"><label for="s2">★</label>
+                                <input type="radio" id="s1" name="rating" value="1"><label for="s1">★</label>
                             </div>
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label" for="feedbackText">Your Review</label>
-                            <textarea class="form-textarea" id="feedbackText" rows="5" placeholder="How has Pumping Iron Creatine helped your training?" required></textarea>
+                            <label>Your Review</label>
+                            <textarea id="feedbackText" rows="4" placeholder="How has Pumping Iron Creatine helped your training?" required></textarea>
                         </div>
 
-                        <button type="submit" id="submitBtn" class="submit-btn">Submit Review</button>
+                        <button type="submit" id="submitBtn" class="submit-btn">SUBMIT REVIEW</button>
                     </form>
                 </div>
             </div>
 
-            <!-- RIGHT: Published Reviews -->
+            <!-- Reviews Feed -->
             <div>
                 <div class="feed-header">
-                    <span class="feed-title">Community Reviews</span>
-                    <span id="countDisplay" class="feed-count"></span>
+                    <h2>Community Reviews</h2>
+                    <span id="countDisplay"></span>
                 </div>
-
                 <div id="feedContainer">
                     <div class="empty-state">Loading reviews...</div>
                 </div>
             </div>
-
         </div>
     </div>
 
     <footer>
-        <div class="footer-brand">PUMPING IRON</div>
-        <div class="footer-sub">Gym Nutrition Prep Service · Kiambu County</div>
+        PUMPING IRON • Kiambu County
     </footer>
 
     <script>
-        const SUPABASE_URL = "https://zhdpiscqxaowjrfidfis.supabase.co"; 
+        const SUPABASE_URL = "https://zhdpiscqxaowjrfidfis.supabase.co";
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpoZHBpc2NxeGFvd2pyZmlkZmlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNDEwNjQsImV4cCI6MjA5NzkxNzA2NH0.RH9CQ6uAYmwqBJaChQdXGrJjVJ6phIVhVBRfmm0Itec";
 
-        // Correct Supabase client initialization
         const { createClient } = supabase;
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        async function fetchAndRenderReviews() {
-            const box = document.getElementById('feedContainer');
+        async function fetchReviews() {
+            const container = document.getElementById('feedContainer');
             const counter = document.getElementById('countDisplay');
 
             try {
-                const { data: reviews, error } = await supabaseClient
+                const { data, error } = await supabaseClient
                     .from('reviews')
                     .select('*')
                     .order('created_at', { ascending: false });
 
                 if (error) throw error;
 
-                counter.innerText = `\( {reviews.length} Review \){reviews.length !== 1 ? 's' : ''}`;
-                box.innerHTML = '';
+                counter.textContent = `\( {data.length} Review \){data.length !== 1 ? 's' : ''}`;
 
-                if (reviews.length === 0) {
-                    box.innerHTML = `<div class="empty-state">No reviews yet. Be the first to share your experience on the left!</div>`;
+                if (data.length === 0) {
+                    container.innerHTML = `<div class="empty-state">No reviews yet. Be the first!</div>`;
                     return;
                 }
 
-                reviews.forEach(item => {
-                    const filledStars = '★'.repeat(item.rating);
-                    const blankStars = '☆'.repeat(5 - item.rating);
-                    const dbDate = new Date(item.created_at);
-                    const formattedDate = dbDate.toLocaleDateString('en-KE', { year: 'numeric', month: 'short', day: 'numeric' });
+                container.innerHTML = '';
+                data.forEach(review => {
+                    const stars = '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating);
+                    const date = new Date(review.created_at).toLocaleDateString('en-KE', {year:'numeric', month:'short', day:'numeric'});
 
-                    const element = document.createElement('div');
-                    element.className = 'review-card';
-                    element.innerHTML = `
-                        <div class="card-top">
-                            <div class="athlete-name">${sanitizeInput(item.name)}</div>
-                            <div class="card-stars">\( {filledStars} \){blankStars}</div>
+                    const card = document.createElement('div');
+                    card.className = 'review-card';
+                    card.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
+                            <strong>${review.name}</strong>
+                            <span style="color:#FFC107;">${stars}</span>
                         </div>
-                        <div class="card-text">${sanitizeInput(item.text)}</div>
-                        <div class="card-date">${formattedDate}</div>
+                        <p>${review.text}</p>
+                        <small style="color:var(--gray); display:block; margin-top:1rem; text-align:right;">${date}</small>
                     `;
-                    box.appendChild(element);
+                    container.appendChild(card);
                 });
-
             } catch (err) {
-                console.error("Error fetching reviews:", err);
-                box.innerHTML = `<div class="empty-state" style="color:var(--red);">Failed to load reviews. Please check your connection.</div>`;
+                console.error("Fetch error:", err);
+                container.innerHTML = `<div class="empty-state" style="color:#ff6666;">Failed to load reviews</div>`;
             }
         }
 
-        function sanitizeInput(input) {
-            if (!input) return '';
-            return input.replace(/[&<>'"]/g, char => ({
-                '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-            }[char] || char));
-        }
-
-        // Form Submission
-        document.getElementById('submissionForm').addEventListener('submit', async function(event) {
-            event.preventDefault();
-            
+        document.getElementById('submissionForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
             const btn = document.getElementById('submitBtn');
-            const handle = document.getElementById('athleteName').value.trim();
-            const message = document.getElementById('feedbackText').value.trim();
-            const ratingInput = document.querySelector('input[name="rating"]:checked');
-
-            if (!ratingInput) {
-                alert("Please select a star rating");
-                return;
-            }
-
-            const ratingScore = parseInt(ratingInput.value);
-
             btn.disabled = true;
-            btn.innerText = "Submitting...";
+            btn.textContent = "Submitting...";
 
             try {
-                const { error } = await supabaseClient
-                    .from('reviews')
-                    .insert([{ 
-                        name: handle, 
-                        text: message, 
-                        rating: ratingScore 
-                    }]);
+                const name = document.getElementById('athleteName').value.trim();
+                const text = document.getElementById('feedbackText').value.trim();
+                const rating = parseInt(document.querySelector('input[name="rating"]:checked').value);
 
+                const { error } = await supabaseClient.from('reviews').insert([{ name, text, rating }]);
                 if (error) throw error;
 
-                alert("✅ Review submitted successfully!");
-                this.reset();
-                await fetchAndRenderReviews();
-
+                alert("✅ Thank you! Review submitted.");
+                e.target.reset();
+                fetchReviews();
             } catch (err) {
                 console.error(err);
-                alert("❌ Failed to submit review: " + (err.message || "Unknown error"));
+                alert("❌ Failed to submit. " + err.message);
             } finally {
                 btn.disabled = false;
-                btn.innerText = "Submit Review";
+                btn.textContent = "SUBMIT REVIEW";
             }
         });
 
-        // Load reviews when page loads
-        window.addEventListener('DOMContentLoaded', fetchAndRenderReviews);
+        // Load reviews
+        window.addEventListener('load', fetchReviews);
     </script>
 </body>
-</html>
+    </html>
