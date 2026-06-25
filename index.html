@@ -1055,7 +1055,7 @@ function calculate() {
       { k: 'Daily water intake', v: water + ' litres minimum' },
     ], disclaimer);
 
-    orderMsg = `Hello I'd like to order.\n\nPlan: ${planName}\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\n\nSachet size: ${sachetGrams}g\nDuration: 5 days (fixed)\nTotal sachets: ${totalSachets}\nSachet subtotal: KSh ${sachetSubtotal}\nDelivery fee: KSh ${DELIVERY_FEE_KIAMBU}\nTOTAL: KSh ${total}\n\nPlease confirm and process my order.`;
+    orderMsg = `Hello I'd like to order.\n\nPlan: ${planName}\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\n\nSachet size: ${sachetGrams}g\nDuration: 5 days (fixed)\nTotal sachets: ${totalSachets}\nSachet subtotal: KSh ${sachetSubtotal}\nDelivery fee: KSh ${DELIVERY_FEE_KIAMBU}\nTOTAL: KSh ${total}\nLocation: ${location}, ${gym}\n\nPlease confirm and process my order.`;
     setWhatsapp(orderMsg);
 
   } else {
@@ -1083,7 +1083,7 @@ function calculate() {
       { k: 'Daily water intake', v: water + ' litres minimum' },
     ], disclaimer);
 
-    orderMsg = `Hello I'd like to order.\n\nPlan: ${planName}\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\n\nSachet size: ${sachetGrams}g\nDuration: ${durObj.label}\nPrice per sachet: KSh ${pricePerSachet}\nTotal sachets: ${totalSachets}\nSachet subtotal: KSh ${sachetSubtotal}\nDelivery fee: KSh ${DELIVERY_FEE_KIAMBU}\nTOTAL: KSh ${total}\n\nPlease confirm and process my order.`;
+    orderMsg = `Hello I'd like to order.\n\nPlan: ${planName}\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\n\nSachet size: ${sachetGrams}g\nDuration: ${durObj.label}\nPrice per sachet: KSh ${pricePerSachet}\nTotal sachets: ${totalSachets}\nSachet subtotal: KSh ${sachetSubtotal}\nDelivery fee: KSh ${DELIVERY_FEE_KIAMBU}\nTOTAL: KSh ${total}\nLocation: ${location}, ${gym}\n\nPlease confirm and process my order.`;
     setWhatsapp(orderMsg);
   }
 }
