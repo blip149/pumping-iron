@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reviews — Pumping Iron Creatine</title>
+    <title>Athlete Reviews — Pumping Iron Creatine</title>
     <meta name="description" content="Read verified reviews from athletes across Kiambu County using Pumping Iron's weight-calculated creatine pre-portioned sachets.">
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
     
@@ -17,7 +17,6 @@
             --red-dark: #8B0F11;
             --black: #0D0D0D;
             --dark: #1A1A1A;
-            --card: #222222;
             --border: #333333;
             --gray: #888888;
             --light: #CCCCCC;
@@ -65,7 +64,6 @@
         .nav-order {
             background: var(--red);
             color: var(--white);
-            border: none;
             font-family: var(--font-head);
             font-size: 1rem;
             font-weight: 700;
@@ -78,11 +76,20 @@
 
         .nav-order:hover { background: var(--red-dark); }
 
-        /* CONTAINER SETUP */
+        /* CONTAINER */
         .wrapper {
             padding: 7rem 1.5rem 4rem;
             max-width: 1200px;
             margin: 0 auto;
+        }
+
+        .section-title {
+            font-family: var(--font-display);
+            font-size: clamp(2.5rem, 8vw, 4.5rem);
+            line-height: 1;
+            margin-bottom: 2.5rem;
+            text-align: center;
+            text-transform: uppercase;
         }
 
         .reviews-layout {
@@ -99,27 +106,7 @@
             }
         }
 
-        .section-label {
-            font-family: var(--font-head);
-            font-size: 0.8rem;
-            font-weight: 600;
-            letter-spacing: 0.25em;
-            color: var(--red);
-            text-transform: uppercase;
-            margin-bottom: 0.5rem;
-            text-align: center;
-        }
-
-        .section-title {
-            font-family: var(--font-display);
-            font-size: clamp(2.5rem, 8vw, 4.5rem);
-            line-height: 1;
-            margin-bottom: 2rem;
-            text-align: center;
-            text-transform: uppercase;
-        }
-
-        /* REVIEW FORM SECTION */
+        /* REVIEW FORM */
         .review-box {
             background: var(--dark);
             border: 1px solid var(--border);
@@ -172,7 +159,6 @@
         .form-input:focus, .form-textarea:focus { border-color: var(--red); }
         .form-input::placeholder, .form-textarea::placeholder { color: var(--border); }
 
-        /* STAR SELECTION */
         .star-rating-select {
             display: flex;
             flex-direction: row-reverse;
@@ -190,8 +176,8 @@
         }
 
         .star-rating-select label:hover,
-        .star-rating-select label:hover ~ label,
-        .star-rating-select input:checked ~ label {
+        .star-rating-select label:hover \~ label,
+        .star-rating-select input:checked \~ label {
             color: var(--star-gold);
         }
 
@@ -212,7 +198,7 @@
         .submit-btn:hover { background: var(--red-dark); }
         .submit-btn:disabled { background: var(--border); color: var(--gray); cursor: not-allowed; }
 
-        /* FEED SECTION */
+        /* REVIEWS FEED */
         .feed-header {
             display: flex;
             justify-content: space-between;
@@ -225,7 +211,6 @@
         .feed-title { font-family: var(--font-display); font-size: 1.8rem; letter-spacing: 0.05em; }
         .feed-count { font-family: var(--font-head); font-size: 0.9rem; color: var(--gray); font-weight: 700; letter-spacing: 0.05em; }
 
-        /* REVIEW CARD ITEM */
         .review-card {
             background: var(--dark);
             border: 1px solid var(--border);
@@ -253,7 +238,14 @@
         .card-text { font-size: 0.95rem; color: var(--light); line-height: 1.6; white-space: pre-line; }
         .card-date { font-size: 0.75rem; color: var(--gray); margin-top: 1rem; text-align: right; text-transform: uppercase; letter-spacing: 0.05em; }
 
-        .empty-state { text-align: center; padding: 3rem 1rem; color: var(--gray); border: 1px dashed var(--border); font-size: 0.9rem; }
+        .empty-state { 
+            text-align: center; 
+            padding: 3rem 1rem; 
+            color: var(--gray); 
+            border: 1px dashed var(--border); 
+            font-size: 0.9rem; 
+            border-radius: 8px;
+        }
 
         footer {
             background: var(--dark);
@@ -278,14 +270,14 @@
     </nav>
 
     <div class="wrapper">
-        <h1 class="section-title">Reviews</h1>
+        <h1 class="section-title">Athlete Reviews</h1>
 
         <div class="reviews-layout">
             
             <!-- LEFT: Review Form -->
             <div>
                 <div class="review-box">
-                    <div class="form-heading">Your Feedback</div>
+                    <div class="form-heading">Share Your Experience</div>
                     <form id="submissionForm">
                         <div class="form-group">
                             <label class="form-label" for="athleteName">Your Name / Gym Handle</label>
@@ -304,8 +296,8 @@
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label" for="feedbackText">Leave a review</label>
-                            <textarea class="form-textarea" id="feedbackText" rows="5" placeholder="How has the custom weight dosing impacted your recovery or power output?" required></textarea>
+                            <label class="form-label" for="feedbackText">Your Review</label>
+                            <textarea class="form-textarea" id="feedbackText" rows="5" placeholder="How has Pumping Iron Creatine helped your training?" required></textarea>
                         </div>
 
                         <button type="submit" id="submitBtn" class="submit-btn">Submit Review</button>
@@ -334,28 +326,30 @@
     </footer>
 
     <script>
-        const SUPABASE_URL = "https://zhdpiscqxaowjrfidfis.supabase.co/rest/v1/"; 
+        const SUPABASE_URL = "https://zhdpiscqxaowjrfidfis.supabase.co"; 
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpoZHBpc2NxeGFvd2pyZmlkZmlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNDEwNjQsImV4cCI6MjA5NzkxNzA2NH0.RH9CQ6uAYmwqBJaChQdXGrJjVJ6phIVhVBRfmm0Itec";
 
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // Correct Supabase client initialization
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         async function fetchAndRenderReviews() {
             const box = document.getElementById('feedContainer');
             const counter = document.getElementById('countDisplay');
 
             try {
-                const { data: reviews, error } = await supabase
+                const { data: reviews, error } = await supabaseClient
                     .from('reviews')
                     .select('*')
                     .order('created_at', { ascending: false });
 
                 if (error) throw error;
 
-                counter.innerText = `${reviews.length} Review${reviews.length !== 1 ? 's' : ''}`;
+                counter.innerText = `\( {reviews.length} Review \){reviews.length !== 1 ? 's' : ''}`;
                 box.innerHTML = '';
 
                 if (reviews.length === 0) {
-                    box.innerHTML = `<div class="empty-state">No athlete logs documented yet. Be the first to drop your training feedback on the left!</div>`;
+                    box.innerHTML = `<div class="empty-state">No reviews yet. Be the first to share your experience on the left!</div>`;
                     return;
                 }
 
@@ -370,7 +364,7 @@
                     element.innerHTML = `
                         <div class="card-top">
                             <div class="athlete-name">${sanitizeInput(item.name)}</div>
-                            <div class="card-stars">${filledStars}${blankStars}</div>
+                            <div class="card-stars">\( {filledStars} \){blankStars}</div>
                         </div>
                         <div class="card-text">${sanitizeInput(item.text)}</div>
                         <div class="card-date">${formattedDate}</div>
@@ -379,7 +373,7 @@
                 });
 
             } catch (err) {
-                console.error("Database connection failed:", err);
+                console.error("Error fetching reviews:", err);
                 box.innerHTML = `<div class="empty-state" style="color:var(--red);">Failed to load reviews. Please check your connection.</div>`;
             }
         }
@@ -391,36 +385,50 @@
             }[char] || char));
         }
 
+        // Form Submission
         document.getElementById('submissionForm').addEventListener('submit', async function(event) {
             event.preventDefault();
             
             const btn = document.getElementById('submitBtn');
             const handle = document.getElementById('athleteName').value.trim();
             const message = document.getElementById('feedbackText').value.trim();
-            const ratingScore = parseInt(document.querySelector('input[name="rating"]:checked').value);
-            
+            const ratingInput = document.querySelector('input[name="rating"]:checked');
+
+            if (!ratingInput) {
+                alert("Please select a star rating");
+                return;
+            }
+
+            const ratingScore = parseInt(ratingInput.value);
+
             btn.disabled = true;
-            btn.innerText = "Syncing with cloud...";
+            btn.innerText = "Submitting...";
 
             try {
-                const { error } = await supabase
+                const { error } = await supabaseClient
                     .from('reviews')
-                    .insert([{ name: handle, text: message, rating: ratingScore }]);
+                    .insert([{ 
+                        name: handle, 
+                        text: message, 
+                        rating: ratingScore 
+                    }]);
 
                 if (error) throw error;
 
+                alert("✅ Review submitted successfully!");
                 this.reset();
                 await fetchAndRenderReviews();
 
             } catch (err) {
-                alert("Could not post review. Please try again.");
                 console.error(err);
+                alert("❌ Failed to submit review: " + (err.message || "Unknown error"));
             } finally {
                 btn.disabled = false;
                 btn.innerText = "Submit Review";
             }
         });
 
+        // Load reviews when page loads
         window.addEventListener('DOMContentLoaded', fetchAndRenderReviews);
     </script>
 </body>
