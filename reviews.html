@@ -3,16 +3,15 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Athlete Reviews — Pumping Iron Creatine</title>
+    <title>Reviews — Pumping Iron Creatine</title>
     <meta name="description" content="Read verified reviews from athletes across Kiambu County using Pumping Iron's weight-calculated creatine pre-portioned sachets." />
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet" />
 
-    <!-- Cloudflare Turnstile -->
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
+        /* Your original styles - unchanged */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
@@ -81,11 +80,7 @@
 
         .nav-order:hover { background: var(--red-dark); }
 
-        .wrapper {
-            padding: 7rem 1.5rem 4rem;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
+        .wrapper { padding: 7rem 1.5rem 4rem; max-width: 1200px; margin: 0 auto; }
 
         .reviews-layout {
             display: grid;
@@ -263,14 +258,18 @@
 
         <div class="reviews-layout">
 
-            <!-- LEFT: Review Form -->
             <div>
                 <div class="review-box">
                     <div class="form-heading">Your Feedback</div>
                     <form id="submissionForm">
                         <div class="form-group">
-                            <label class="form-label" for="athleteName">Your Name / Gym Handle</label>
-                            <input class="form-input" type="text" id="athleteName" placeholder="e.g., Alex K. (Ruiru Hub)" required />
+                            <label class="form-label" for="athleteName">Display Name (optional)</label>
+                            <input class="form-input" type="text" id="athleteName" placeholder="e.g., Alex K." />
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="athleteEmail">Email (required for verification)</label>
+                            <input class="form-input" type="email" id="athleteEmail" placeholder="your@email.com" required />
                         </div>
 
                         <div class="form-group">
@@ -294,7 +293,6 @@
                             <textarea class="form-textarea" id="feedbackText" rows="5" placeholder="How has the custom weight dosing impacted your recovery or power output?" required></textarea>
                         </div>
 
-                        <!-- Cloudflare Turnstile -->
                         <div class="form-group">
                             <div class="cf-turnstile" data-sitekey="0x4AAAAAADrEZ8wp9aCMBqLP" data-callback="onTurnstileSuccess" data-action="review_submit"></div>
                         </div>
@@ -305,7 +303,6 @@
                 </div>
             </div>
 
-            <!-- RIGHT: Published Reviews -->
             <div>
                 <div class="feed-header">
                     <span class="feed-title">Community Reviews</span>
@@ -338,10 +335,27 @@
             turnstileToken = token;
         }
 
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            return Array.from(new Uint8Array(hashBuffer))
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
         function sanitize(input) {
             if (!input) return "";
             const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' };
             return input.replace(/[&<>'"]/g, (ch) => map[ch] || ch);
+        }
+
+        function maskEmail(email) {
+            if (!email || !email.includes('@')) return "Anonymous";
+            const [local, domain] = email.split('@');
+            let masked = local;
+            if (local.length > 3) masked = local.substring(0, 3) + '***';
+            else if (local.length > 1) masked = local.substring(0, 1) + '***';
+            return masked + '@' + domain;
         }
 
         function formatDate(iso) {
@@ -376,11 +390,12 @@
                 }
 
                 for (const item of reviews) {
+                    const displayName = item.name ? sanitize(item.name) : maskEmail(item.email);
                     const card = document.createElement('div');
                     card.className = 'review-card';
                     card.innerHTML = `
                         <div class="card-top">
-                            <div class="athlete-name">${sanitize(item.name)}</div>
+                            <div class="athlete-name">${displayName}</div>
                             <div class="card-stars">${renderStars(item.rating)}</div>
                         </div>
                         <div class="card-text">${sanitize(item.text)}</div>
@@ -398,13 +413,14 @@
             e.preventDefault();
 
             const btn = document.getElementById('submitBtn');
-            const name = document.getElementById('athleteName').value.trim();
+            const name = document.getElementById('athleteName').value.trim() || "Anonymous";
+            const email = document.getElementById('athleteEmail').value.trim().toLowerCase();
             const text = document.getElementById('feedbackText').value.trim();
             const ratingEl = document.querySelector('input[name="rating"]:checked');
             const formFeedback = document.getElementById('formFeedback');
 
-            if (!name || !text || !ratingEl) {
-                formFeedback.textContent = 'Please fill all fields and select a rating.';
+            if (!email || !text || !ratingEl) {
+                formFeedback.textContent = 'Email and review are required.';
                 return;
             }
 
@@ -414,6 +430,7 @@
             }
 
             const rating = parseInt(ratingEl.value);
+            const emailHash = await sha256(email);
 
             btn.disabled = true;
             btn.textContent = 'Submitting…';
@@ -422,60 +439,32 @@
             try {
                 const { error } = await supabaseClient
                     .from('reviews')
-                    .insert([{ name, text, rating }]);
+                    .insert([{ 
+                        name, 
+                        email, 
+                        text, 
+                        rating, 
+                        email_hash: emailHash 
+                    }]);
 
                 if (error) throw error;
 
                 this.reset();
                 turnstileToken = null;
                 formFeedback.style.color = '#4CAF50';
-                formFeedback.textContent = '✅ Review submitted successfully!';
+                formFeedback.textContent = '✅ Thank you! Review submitted.';
                 await fetchAndRenderReviews();
 
             } catch (err) {
                 console.error(err);
-                formFeedback.textContent = '❌ Could not post review. Please try again.';
+                formFeedback.textContent = '❌ Could not submit review.';
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Submit Review';
             }
         });
 
-        // === RELIABLE STAR RATING (JS) - This makes the stars light up properly ===
-        document.addEventListener('DOMContentLoaded', () => {
-            const starGroup = document.getElementById('starSelector');
-            if (!starGroup) return;
-
-            const labels = Array.from(starGroup.querySelectorAll('label'));
-            const inputs = Array.from(starGroup.querySelectorAll('input'));
-
-            function highlightUpTo(value) {
-                labels.forEach((label, i) => {
-                    const thisStarValue = 5 - i;
-                    label.style.color = (thisStarValue <= value) ? 'var(--star-gold)' : 'var(--star-dim)';
-                });
-            }
-
-            inputs.forEach(input => {
-                input.addEventListener('change', () => {
-                    if (input.checked) highlightUpTo(parseInt(input.value));
-                });
-            });
-
-            labels.forEach((label, i) => {
-                const value = 5 - i;
-                label.addEventListener('mouseenter', () => highlightUpTo(value));
-                label.addEventListener('mouseleave', () => {
-                    const checked = starGroup.querySelector('input:checked');
-                    highlightUpTo(checked ? parseInt(checked.value) : 0);
-                });
-            });
-
-            const initial = starGroup.querySelector('input:checked');
-            if (initial) highlightUpTo(parseInt(initial.value));
-        });
-
         window.addEventListener('DOMContentLoaded', fetchAndRenderReviews);
     </script>
 </body>
-    </html>
+</html>
