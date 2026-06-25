@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Reviews — Pumping Iron Creatine</title>
+    <title>Athlete Reviews — Pumping Iron Creatine</title>
     <meta name="description" content="Read verified reviews from athletes across Kiambu County using Pumping Iron's weight-calculated creatine pre-portioned sachets." />
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet" />
 
@@ -11,7 +11,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
-        /* Your original styles - unchanged */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
@@ -352,10 +351,11 @@
         function maskEmail(email) {
             if (!email || !email.includes('@')) return "Anonymous";
             const [local, domain] = email.split('@');
-            let masked = local;
-            if (local.length > 3) masked = local.substring(0, 3) + '***';
-            else if (local.length > 1) masked = local.substring(0, 1) + '***';
-            return masked + '@' + domain;
+            let maskedLocal = local;
+            if (local.length > 4) maskedLocal = local.substring(0, 4) + '***';
+            else if (local.length > 2) maskedLocal = local.substring(0, 2) + '***';
+            else maskedLocal = local.substring(0, 1) + '***';
+            return maskedLocal + '@' + domain;
         }
 
         function formatDate(iso) {
@@ -390,7 +390,7 @@
                 }
 
                 for (const item of reviews) {
-                    const displayName = item.name ? sanitize(item.name) : maskEmail(item.email);
+                    const displayName = maskEmail(item.email);   // ONLY masked email shown
                     const card = document.createElement('div');
                     card.className = 'review-card';
                     card.innerHTML = `
@@ -462,6 +462,40 @@
                 btn.disabled = false;
                 btn.textContent = 'Submit Review';
             }
+        });
+
+        // Reliable Star Rating
+        document.addEventListener('DOMContentLoaded', () => {
+            const starGroup = document.getElementById('starSelector');
+            if (!starGroup) return;
+
+            const labels = Array.from(starGroup.querySelectorAll('label'));
+            const inputs = Array.from(starGroup.querySelectorAll('input'));
+
+            function highlightUpTo(value) {
+                labels.forEach((label, i) => {
+                    const thisStarValue = 5 - i;
+                    label.style.color = (thisStarValue <= value) ? 'var(--star-gold)' : 'var(--star-dim)';
+                });
+            }
+
+            inputs.forEach(input => {
+                input.addEventListener('change', () => {
+                    if (input.checked) highlightUpTo(parseInt(input.value));
+                });
+            });
+
+            labels.forEach((label, i) => {
+                const value = 5 - i;
+                label.addEventListener('mouseenter', () => highlightUpTo(value));
+                label.addEventListener('mouseleave', () => {
+                    const checked = starGroup.querySelector('input:checked');
+                    highlightUpTo(checked ? parseInt(checked.value) : 0);
+                });
+            });
+
+            const initial = starGroup.querySelector('input:checked');
+            if (initial) highlightUpTo(parseInt(initial.value));
         });
 
         window.addEventListener('DOMContentLoaded', fetchAndRenderReviews);
