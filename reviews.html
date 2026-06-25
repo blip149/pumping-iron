@@ -204,8 +204,8 @@
 
         /* Hover and checked states: all stars to the left light up */
         .star-group label:hover,
-        .star-group label:hover~label,
-        .star-group input:checked~label {
+        .star-group label:hover\~label,
+        .star-group input:checked\~label {
             color: var(--star-gold);
         }
 
@@ -424,7 +424,8 @@
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpoZHBpc2NxeGFvd2pyZmlkZmlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNDEwNjQsImV4cCI6MjA5NzkxNzA2NH0.RH9CQ6uAYmwqBJaChQdXGrJjVJ6phIVhVBRfmm0Itec";
 
         // ─── INIT CLIENT ──────────────────────────────────────────────────
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // ─── HELPERS ──────────────────────────────────────────────────────
         function sanitize(input) {
@@ -448,13 +449,12 @@
             const counter = document.getElementById('countDisplay');
 
             try {
-                const { data: reviews, error } = await supabase
+                const { data: reviews, error } = await supabaseClient
                     .from('reviews')
                     .select('*')
                     .order('created_at', { ascending: false });
 
                 if (error) {
-                    // If the table doesn't exist, error code is '42P01' (relation does not exist)
                     console.error('Supabase fetch error:', error);
                     container.innerHTML =
                         `<div class="empty-state error">❌ Could not fetch reviews: ${error.message || 'Unknown error'}</div>`;
@@ -506,7 +506,6 @@
             const ratingEl = document.querySelector('input[name="rating"]:checked');
             const formFeedback = document.getElementById('formFeedback');
 
-            // Clear previous feedback
             formFeedback.textContent = '';
 
             const name = nameEl.value.trim();
@@ -522,7 +521,7 @@
             btn.textContent = 'Submitting…';
 
             try {
-                const { data, error } = await supabase
+                const { data, error } = await supabaseClient
                     .from('reviews')
                     .insert([{ name, text, rating }]);
 
@@ -532,7 +531,6 @@
                     return;
                 }
 
-                // Success: clear form and refresh
                 this.reset();
                 formFeedback.textContent = '✅ Review submitted!';
                 formFeedback.style.color = '#4CAF50';
@@ -544,7 +542,6 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Submit Review';
-                // reset color after a moment
                 setTimeout(() => {
                     formFeedback.style.color = '';
                 }, 3000);
@@ -555,4 +552,4 @@
         window.addEventListener('DOMContentLoaded', fetchAndRenderReviews);
     </script>
 </body>
-</html>
+    </html>
