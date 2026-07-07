@@ -41,7 +41,7 @@
     "@type": "AdministrativeArea",
     "name": "Kiambu County"
   },
-  "priceRange": "KSh 41+",
+  "priceRange": "KSh 42+",
   "contactPoint": {
     "@type": "ContactPoint",
     "telephone": "+254115509593",
@@ -563,7 +563,7 @@
 <div class="hero">
   <p class="hero-eyebrow">Pure Creatine Monohydrate · Kiambu</p>
   <h1 class="hero-title">YOUR DOSE.<br><span>YOUR GYM.</span><br>YOUR WAY.</h1>
-  <p class="hero-sub">Get your exact creatine dose calculated per your body weight, pre-portioned and delivered to your gym.</p>
+  <p class="hero-sub">Get your exact creatine dose calculated per your body weight</p>
   <div class="hero-cta">
     <a class="btn-primary" href="#calculator">Calculate my dose</a>
     <a class="btn-outline" href="#how">How it works</a>
@@ -581,7 +581,7 @@
     <span class="stat-label">Exact body-weight dose</span>
   </div>
   <div class="stat">
-    <span class="stat-num">KSh 41</span>
+    <span class="stat-num">KSh 42</span>
     <span class="stat-label">Starting price</span>
   </div>
   <div class="stat">
@@ -607,8 +607,8 @@
     </div>
     <div class="why-card">
       <div class="why-icon">🏋️</div>
-      <p class="why-title">Delivered to your gym</p>
-      <p class="why-text">Tell us your gym and we deliver on a schedule. Pick up at the front desk and get on with your training.</p>
+      <p class="why-title">Delivery</p>
+      <p class="why-text"> we deliver on a schedule. Pick up and get on with your training.</p>
     </div>
     <div class="why-card">
       <div class="why-icon">🔬</div>
@@ -672,12 +672,12 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="gym">Preferred pickup gym (optional)</label>
+        <label class="form-label" for="gym">Preferred pickup location(optional)</label>
         <input class="form-input" type="text" id="gym" placeholder="e.g. gym name or nearest landmark">
       </div>
 
       <div class="delivery-note">
-        📍 <strong>Delivery:</strong> Flat KSh 120 anywhere in Kiambu County.
+        📍 <strong>Delivery:</strong>Fee subject to your location.
       </div>
 
       <button class="calc-btn" onclick="calculate()">CALCULATE MY PLAN</button>
@@ -734,7 +734,7 @@
       <span class="step-num">2</span>
       <div>
         <p class="step-title">Order on WhatsApp</p>
-        <p class="step-desc">Tap the order button. Your details are pre-filled. Confirm how many days supply you want and your pickup gym or area.</p>
+        <p class="step-desc">Tap the order button. Your details are pre-filled. Confirm how many days supply you want and your pickup area.</p>
       </div>
     </div>
     <div class="step">
@@ -748,25 +748,10 @@
       <span class="step-num">4</span>
       <div>
         <p class="step-title">Pick up at your gym</p>
-        <p class="step-desc">We deliver on scheduled days to your chosen gym or area. Pick up your order and stay consistent.</p>
+        <p class="step-desc">We deliver on scheduled days to your chosen  area. Pick up your order and stay consistent.</p>
       </div>
     </div>
   </div>
-</section>
-
-<!-- DELIVERY ZONE -->
-<section class="reveal">
-  <p class="section-label">Where we deliver</p>
-  <h2 class="section-title">KIAMBU COUNTY</h2>
-  <p style="color: var(--light); font-size:0.92rem; margin-bottom:1rem;">One flat rate, anywhere in Kiambu County.</p>
-  <div class="zone-box">
-    <p class="zone-title">DELIVERY FEE</p>
-    <div class="zone-row">
-      <span class="zone-area">Anywhere in Kiambu County</span>
-      <span class="zone-fee">KSh 120 flat</span>
-    </div>
-  </div>
-  <p style="margin-top:1rem; font-size:0.82rem; color:var(--gray);">Outside Kiambu? Message us on WhatsApp — we'll work out delivery before confirming your order.</p>
 </section>
 
 <!-- TRUST -->
@@ -812,7 +797,7 @@
 <!-- FOOTER -->
 <footer>
   <p class="footer-brand">PUMPING IRON</p>
-  <p class="footer-sub">Creatine Monohydrate · Kiambu County, Kenya · 0115509593</p>
+  <p class="footer-sub">Creatine Monohydrate · Kenya · 0115509593</p>
   <p style="margin-top:0.5rem; font-size:0.8rem; color: var(--gray);">Supports recovery · Increased strength + stamina</p>
 </footer>
 
@@ -916,8 +901,7 @@ function calculate() {
     const sachetsPerDay = 4;
     const totalSachets = sachetsPerDay * loadingDays;
     const trainingSachetPrice = getSachetPrice(sachetGrams, wc.bonusProfit);
-    sachetSubtotal = round2(trainingSachetPrice * totalSachets);
-    total = round2(sachetSubtotal + DELIVERY_FEE_KIAMBU);
+    total = round2(trainingSachetPrice * totalSachets);
 
     planName = 'Fast Saturation (Loading)';
     title = 'FAST SATURATION PLAN';
@@ -932,7 +916,6 @@ function calculate() {
       { k: 'Daily intake', v: `4 × ${sachetGrams}g sachets/day` },
       { k: 'Total sachets', v: totalSachets + ' sachets' },
       { k: 'Sachet subtotal', v: 'KSh ' + sachetSubtotal },
-      { k: 'Delivery fee', v: 'KSh ' + DELIVERY_FEE_KIAMBU },
       { k: 'TOTAL', v: 'KSh ' + total, hl: true },
       { k: 'Daily water intake', v: water + ' litres minimum' },
     ], disclaimer);
@@ -949,13 +932,12 @@ function calculate() {
     const totalTrainingDays = Math.round((trainingDaysPerWeek / 7) * totalDays);
     const totalRestDays = totalDays - totalTrainingDays;
 
-    const trainingSachetPrice = getSachetPrice(sachetGrams, wc.bonusProfit);
+    const trainingSachetPrice = getSachetPrice(sachetGrams, wc.bonusProfit) + 5;
     const restSachetPrice = getSachetPrice(3.0, 0); // Class A 3g maintenance dose on rest days
 
     const trainingSubtotal = round2(totalTrainingDays * trainingSachetPrice);
     const restSubtotal = round2(totalRestDays * restSachetPrice);
-    sachetSubtotal = round2(trainingSubtotal + restSubtotal);
-    total = round2(sachetSubtotal + DELIVERY_FEE_KIAMBU);
+    total = round2(trainingSubtotal + restSubtotal);
 
     planName = 'Ongoing Daily Maintenance';
     title = 'MAINTENANCE PLAN';
@@ -971,7 +953,6 @@ function calculate() {
       { k: 'Training subtotal', v: 'KSh ' + trainingSubtotal },
       { k: 'Rest subtotal', v: 'KSh ' + restSubtotal },
       { k: 'Sachet subtotal', v: 'KSh ' + sachetSubtotal },
-      { k: 'Delivery fee', v: 'KSh ' + DELIVERY_FEE_KIAMBU },
       { k: 'TOTAL', v: 'KSh ' + total, hl: true },
       { k: 'Daily water intake', v: water + ' litres minimum' },
     ], disclaimer);
