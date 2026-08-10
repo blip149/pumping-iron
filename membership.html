@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ironclad Members | Pumping Iron</title>
+  <meta name="description" content="Learn about Ironclad membership perks, discounts, and priority service for Pumping Iron customers in Kiambu County." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-main: #090D15;
+      --bg-card: #121923;
+      --border: #27334A;
+      --text-primary: #F8FAFC;
+      --text-secondary: #94A3B8;
+      --accent: #FF3B30;
+      --accent-soft: rgba(255, 59, 48, 0.12);
+      --radius: 18px;
+      --shadow: 0 24px 60px rgba(0,0,0,0.32);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: radial-gradient(circle at top, rgba(255,59,48,0.15), transparent 40%), var(--bg-main);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .page-header {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 1rem;
+      text-align: center;
+    }
+    .page-header h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(2.5rem, 6vw, 4.2rem);
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.05em;
+    }
+    .page-header p {
+      color: var(--text-secondary);
+      max-width: 700px;
+      margin: 0 auto;
+      font-size: 1rem;
+    }
+    .content {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+    .hero-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      box-shadow: var(--shadow);
+      margin-bottom: 2rem;
+    }
+    .hero-card h2 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.85rem;
+      margin-bottom: 0.5rem;
+    }
+    .hero-card p {
+      color: var(--text-secondary);
+      margin: 0;
+    }
+    .perk-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+    .perk-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      line-height: 1.5;
+    }
+    .perk-card h3 {
+      margin-top: 0;
+      font-size: 1.2rem;
+      color: var(--accent);
+    }
+    .feature-list {
+      list-style: none;
+      padding: 0;
+      margin: 1.5rem 0 0;
+      color: var(--text-secondary);
+      display: grid;
+      gap: 0.9rem;
+    }
+    .feature-list li {
+      padding-left: 1.2rem;
+      position: relative;
+    }
+    .feature-list li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+    .cta-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+    .btn-primary, .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.95rem 1.6rem;
+      border-radius: 999px;
+      border: none;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: transparent; color: var(--text-primary); border: 1px solid var(--accent); }
+    .btn-primary:hover, .btn-secondary:hover { transform: translateY(-1px); }
+    .faq-section {
+      margin-top: 2.5rem;
+    }
+    .faq-section h2 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.8rem;
+      margin-bottom: 1rem;
+    }
+    .faq-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.4rem;
+      margin-bottom: 1rem;
+    }
+    .faq-card h4 {
+      margin: 0 0 0.6rem;
+      font-size: 1.1rem;
+    }
+    .faq-card p { margin: 0; color: var(--text-secondary); }
+    .page-footer {
+      text-align: center;
+      padding: 2rem 1.5rem 3rem;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+    @media (max-width: 760px) {
+      .hero-card, .perk-card, .faq-card { padding: 1.2rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-header">
+    <p class="badge badge-gold" style="display:inline-flex; padding:0.5rem 0.9rem; margin-bottom:1rem; letter-spacing:0.08em;">IRONCLAD MEMBER DETAILS</p>
+    <h1>Why Ironclad Members Always Win</h1>
+    <p>Get everything that makes Pumping Iron easy, consistent, and more rewarding — from better prices to first-access delivery and exclusive bundles.</p>
+  </div>
+
+  <main class="content">
+    <section class="hero-card">
+      <h2>What you get as an Ironclad Member</h2>
+      <p>Becoming a member is more than a discount. It means loyalty rewards, faster service, and a reliable creatine delivery flow designed for athletes who want a simple, effective plan.</p>
+      <ul class="feature-list">
+        <li>Permanent 10% member discount after 4 verified orders</li>
+        <li>Every 4th order gets 30% off as our milestone reward</li>
+        <li>Priority packaging and faster dispatch windows</li>
+        <li>Exclusive early alerts for new doses, promos and stock</li>
+      </ul>
+    </section>
+
+    <section class="perk-grid">
+      <div class="perk-card">
+        <h3>Member Discounts</h3>
+        <p>Keep your cost low with an automatic 10% discount once you complete four orders. Every fourth order also earns a special 30% milestone rate.</p>
+      </div>
+      <div class="perk-card">
+        <h3>Priority Service</h3>
+        <p>Members receive priority handling and scheduling. Your order is packaged first, and delivery gets a faster window when routes are planned.</p>
+      </div>
+      <div class="perk-card">
+        <h3>Trusted Tracking</h3>
+        <p>Your membership status is tied to your M-Pesa phone number, so we verify your streak and keep your pricing consistent every time.</p>
+      </div>
+    </section>
+
+    <section class="faq-section">
+      <h2>Frequently Asked Questions</h2>
+      <div class="faq-card">
+        <h4>How do I become a member?</h4>
+        <p>Place four orders using the same M-Pesa phone number. Once the fourth order is verified, you unlock Ironclad membership benefits automatically.</p>
+      </div>
+      <div class="faq-card">
+        <h4>What if I order from a different phone number?</h4>
+        <p>Membership is tied to one verified number. For the fastest reward tracking, use the same M-Pesa number every time.</p>
+      </div>
+      <div class="faq-card">
+        <h4>Do member benefits apply to all plans?</h4>
+        <p>Yes. Both Fast Saturation and Daily Maintenance plans earn discounts once you qualify as an Ironclad member.</p>
+      </div>
+    </section>
+
+    <div class="cta-row">
+      <a href="index.html#calculator" class="btn-primary">Back to Order Form</a>
+      <a href="mailto:orders@pumpingiron.example?subject=Ironclad%20Membership" class="btn-secondary">Ask about membership</a>
+    </div>
+  </main>
+
+  <footer class="page-footer">
+    <p>Pumping Iron • Simple creatine planning with loyalty rewards for Kiambu County lifters.</p>
+  </footer>
+</body>
+</html>

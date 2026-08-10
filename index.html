@@ -3,1007 +3,899 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pumping Iron — Creatine Monohydrate</title>
+<meta name="description" content="Pumping Iron — pre-portioned creatine sachets, loyalty rewards, and easy M-Pesa ordering for Kiambu County." />
+<!-- Minimal favicon -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='48' fill='%23FF3B30'/%3E%3Ctext x='50' y='58' font-size='42' text-anchor='middle' fill='white' font-family='Arial' font-weight='700'%3EPI%3C/text%3E%3C/svg%3E">
+<title>Pumping Iron | Custom Creatine & Ironclad Member Perks</title>
 
-<!-- SEO Meta -->
-<meta name="description" content="Pumping Iron delivers pure USN Creatine Monohydrate pre-portioned to your exact body weight. No tub needed. Order via WhatsApp and pick up at your gym in Kiambu.">
-<meta name="keywords" content="creatine kiambu, creatine kenya, creatine sachets, USN creatine, gym supplements kiambu, creatine monohydrate kenya, pumping iron creatine">
-<meta name="author" content="Pumping Iron">
-<meta name="robots" content="index, follow">
-<link rel="canonical" href="https://pumpingiron.co.ke/">
+<!-- Supabase JS Client -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<!-- Open Graph -->
-<meta property="og:title" content="Pumping Iron — Your Exact Creatine Dose, Delivered">
-<meta property="og:description" content="Pre-portioned USN creatine calculated by your body weight. Order on WhatsApp, pick up at your gym.">
-<meta property="og:type" content="website">
-<meta property="og:url" content="https://pumpingiron.co.ke/">
-<meta property="og:locale" content="en_KE">
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 
-<!-- Twitter Card -->
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Pumping Iron — Creatine Monohydrate">
-<meta name="twitter:description" content="Your exact creatine dose, pre-portioned and delivered to your gym in Kiambu.">
-
-<!-- Schema.org structured data -->
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "LocalBusiness",
-  "name": "Pumping Iron",
-  "description": "Gym nutrition prep service offering pre-portioned USN Creatine Monohydrate sachets calculated by body weight.",
-  "telephone": "+254115509593",
-  "address": {
-    "@type": "PostalAddress",
-    "addressRegion": "Kiambu",
-    "addressCountry": "KE"
-  },
-  "areaServed": {
-    "@type": "AdministrativeArea",
-    "name": "Kiambu County"
-  },
-  "priceRange": "KSh 42+",
-  "contactPoint": {
-    "@type": "ContactPoint",
-    "telephone": "+254115509593",
-    "contactType": "customer service",
-    "availableLanguage": ["English", "Swahili"]
-  }
-}
-</script>
-
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
+  :root {
+    --bg-main: #0B0F17;
+    --bg-card: #151C28;
+    --border-color: #263348;
+    
+    --primary: #FF3B30;
+    --primary-hover: #D7261C;
+    --accent-gold: #FFB800;
+    --accent-gold-soft: rgba(255, 184, 0, 0.12);
+    
+    --text-primary: #FFFFFF;
+    --text-secondary: #94A3B8;
+    --text-muted: #64748B;
+    
+    --font-heading: 'Syne', sans-serif;
+    --font-body: 'Plus Jakarta Sans', sans-serif;
+    
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+    --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  :root {
-    --red: #C0181A;
-    --red-dark: #8B0F11;
-    --black: #0D0D0D;
-    --dark: #1A1A1A;
-    --card: #222222;
-    --border: #333333;
-    --gray: #888888;
-    --light: #CCCCCC;
-    --white: #F5F5F5;
-    --font-display: 'Bebas Neue', sans-serif;
-    --font-head: 'Barlow Condensed', sans-serif;
-    --font-body: 'Inter', sans-serif;
-  }
-
-  html { scroll-behavior: smooth; }
-
   body {
-    background: var(--black);
-    color: var(--white);
+    background-color: var(--bg-main);
+    color: var(--text-primary);
     font-family: var(--font-body);
-    font-size: 16px;
-    line-height: 1.6;
-    overflow-x: hidden;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
 
-  /* NAV */
-  nav {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    z-index: 100;
-    display: flex;
+  .container {
+    max-width: 1140px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+
+  .badge {
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 1rem 1.5rem;
-    background: rgba(13,13,13,0.92);
-    backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .nav-brand {
-    font-family: var(--font-display);
-    font-size: 1.6rem;
-    color: var(--red);
-    letter-spacing: 0.05em;
-  }
-
-  .nav-order {
-    background: var(--red);
-    color: var(--white);
-    border: none;
-    font-family: var(--font-head);
-    font-size: 1rem;
+    gap: 0.5rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 99px;
+    font-size: 0.8rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
-    padding: 0.5rem 1.2rem;
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-block;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
   }
 
-  .nav-order:hover { background: var(--red-dark); }
+  .badge-gold {
+    background: var(--accent-gold-soft);
+    color: var(--accent-gold);
+    border: 1px solid rgba(255, 184, 0, 0.3);
+  }
+
+  .badge-red {
+    background: rgba(255, 59, 48, 0.12);
+    color: var(--primary);
+    border: 1px solid rgba(255, 59, 48, 0.3);
+  }
+
+  /* NAVIGATION */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(11, 15, 23, 0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .nav-wrapper {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 72px;
+  }
+
+  .logo {
+    font-family: var(--font-heading);
+    font-size: 1.4rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    text-decoration: none;
+  }
+
+  .logo span { color: var(--primary); }
+
+  .nav-btn {
+    background: var(--primary);
+    color: #FFF;
+    font-weight: 700;
+    padding: 0.6rem 1.2rem;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    transition: background 0.2s ease;
+  }
+
+  .nav-btn:hover { background: var(--primary-hover); }
 
   /* HERO */
-  .hero {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
+  .hero { padding: 4rem 0 3rem; }
+
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3.5rem;
     align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 7rem 1.5rem 4rem;
+  }
+
+  .hero-title {
+    font-family: var(--font-heading);
+    font-size: clamp(2.3rem, 5vw, 3.6rem);
+    line-height: 1.1;
+    font-weight: 800;
+    margin: 1rem 0;
+  }
+
+  .hero-title span {
+    background: linear-gradient(135deg, #FF3B30 0%, #FFB800 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+  .spinner {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255,255,255,0.15);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+    vertical-align: middle;
+    margin-left: 0.5rem;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .hero-subtitle {
+    color: var(--text-secondary);
+    font-size: 1.05rem;
+    margin-bottom: 2rem;
+  }
+
+  /* TRACKER CARD */
+  .tracker-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 2rem;
+    box-shadow: var(--shadow);
     position: relative;
     overflow: hidden;
   }
 
-  .hero::before {
-    content: 'PUMPING IRON';
+  .tracker-card::before {
+    content: '';
     position: absolute;
-    font-family: var(--font-display);
-    font-size: clamp(6rem, 20vw, 18rem);
-    color: rgba(192,24,26,0.06);
-    letter-spacing: 0.02em;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    white-space: nowrap;
-    pointer-events: none;
-    user-select: none;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary), var(--accent-gold));
   }
 
-  .hero-eyebrow {
-    font-family: var(--font-head);
-    font-size: 0.85rem;
-    font-weight: 600;
-    letter-spacing: 0.25em;
-    color: var(--red);
-    text-transform: uppercase;
-    margin-bottom: 1rem;
-  }
-
-  .hero-title {
-    font-family: var(--font-display);
-    font-size: clamp(3.5rem, 12vw, 8rem);
-    line-height: 0.95;
-    letter-spacing: 0.02em;
-    color: var(--white);
+  .tracker-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 1.5rem;
   }
 
-  .hero-title span { color: var(--red); }
-
-  .hero-sub {
-    font-size: 1rem;
-    color: var(--light);
-    max-width: 480px;
-    margin: 0 auto 2rem;
-    line-height: 1.7;
-  }
-
-  .hero-cta {
+  .input-group-row {
     display: flex;
-    gap: 1rem;
-    justify-content: center;
-    flex-wrap: wrap;
-  }
-
-  .btn-primary {
-    background: var(--red);
-    color: var(--white);
-    font-family: var(--font-head);
-    font-size: 1.1rem;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    padding: 0.85rem 2rem;
-    border: none;
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-block;
-    transition: background 0.2s;
-  }
-
-  .btn-primary:hover { background: var(--red-dark); }
-
-  .btn-outline {
-    background: transparent;
-    color: var(--white);
-    font-family: var(--font-head);
-    font-size: 1.1rem;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    padding: 0.85rem 2rem;
-    border: 1px solid var(--border);
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-block;
-    transition: border-color 0.2s;
-  }
-
-  .btn-outline:hover { border-color: var(--gray); }
-
-  /* STATS BAR */
-  .stats {
-    background: var(--red);
-    padding: 1rem 1.5rem;
-    display: flex;
-    justify-content: center;
-    gap: 2rem;
-    flex-wrap: wrap;
-  }
-
-  .stat { display: flex; flex-direction: column; align-items: center; }
-
-  .stat-num {
-    font-family: var(--font-display);
-    font-size: 1.8rem;
-    line-height: 1;
-    color: var(--white);
-  }
-
-  .stat-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    letter-spacing: 0.15em;
-    color: rgba(255,255,255,0.8);
-    text-transform: uppercase;
-  }
-
-  /* SECTIONS */
-  section { padding: 4rem 1.5rem; max-width: 860px; margin: 0 auto; }
-
-  .section-label {
-    font-family: var(--font-head);
-    font-size: 0.8rem;
-    font-weight: 600;
-    letter-spacing: 0.25em;
-    color: var(--red);
-    text-transform: uppercase;
-    margin-bottom: 0.5rem;
-  }
-
-  .section-title {
-    font-family: var(--font-display);
-    font-size: clamp(2rem, 6vw, 3.5rem);
-    line-height: 1;
+    gap: 0.5rem;
     margin-bottom: 1.5rem;
   }
 
-
-  /* WHY */
-  .why-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 1px;
-    background: var(--border);
-    border: 1px solid var(--border);
-    margin-top: 2rem;
-  }
-
-  .why-card { background: var(--dark); padding: 1.5rem; }
-
-  .why-icon { font-size: 1.8rem; margin-bottom: 0.75rem; }
-
-  .why-title {
-    font-family: var(--font-head);
-    font-size: 1.1rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.5rem;
-    color: var(--white);
-  }
-
-  .why-text { font-size: 0.88rem; color: var(--light); line-height: 1.6; }
-
-  /* CALCULATOR */
-  #calculator {
-    background: var(--dark);
-    padding: 2.5rem 1.5rem;
-    max-width: 100%;
-    border-top: 3px solid var(--red);
-    border-bottom: 3px solid var(--red);
-  }
-
-  .calc-inner { max-width: 860px; margin: 0 auto; }
-
-  .calc-form { display: grid; gap: 1.5rem; margin-top: 2rem; }
-
-  .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
-
-  .form-label {
-    font-family: var(--font-head);
-    font-size: 0.85rem;
-    font-weight: 600;
-    letter-spacing: 0.15em;
-    color: var(--gray);
-    text-transform: uppercase;
-  }
-
-  .form-input, .form-select {
-    background: var(--black);
-    border: 1px solid var(--border);
-    color: var(--white);
-    font-family: var(--font-body);
-    font-size: 1rem;
-    padding: 0.85rem 1rem;
+  .form-control {
     width: 100%;
-    appearance: none;
+    background: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.8rem 1rem;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 0.95rem;
     outline: none;
     transition: border-color 0.2s;
   }
 
-  .form-input:focus, .form-select:focus { border-color: var(--red); }
-  .form-input::placeholder { color: var(--gray); }
+  .form-control:focus { border-color: var(--accent-gold); }
 
-  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-
-  .delivery-note {
-    background: rgba(192,24,26,0.08);
-    border-left: 3px solid var(--red);
-    padding: 0.85rem 1rem;
-    font-size: 0.85rem;
-    color: var(--light);
-    line-height: 1.6;
-  }
-
-  .calc-btn {
-    background: var(--red);
-    color: var(--white);
-    font-family: var(--font-display);
-    font-size: 1.4rem;
-    letter-spacing: 0.1em;
-    padding: 1rem;
+  .btn-action {
+    background: var(--accent-gold);
+    color: #000;
+    font-weight: 700;
     border: none;
+    padding: 0.8rem 1.2rem;
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    width: 100%;
-    transition: background 0.2s;
+    white-space: nowrap;
+    transition: opacity 0.2s;
   }
 
-  .calc-btn:hover { background: var(--red-dark); }
+  .btn-action:hover { opacity: 0.9; }
 
-  /* RESULT */
-  .result {
-    display: none;
-    margin-top: 2rem;
-    border: 1px solid var(--border);
-    background: var(--black);
-  }
+  .form-control:focus { box-shadow: 0 0 0 3px rgba(255,184,0,0.08); }
 
-  .result.visible { display: block; }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
 
-  .result-header {
-    background: var(--red);
-    padding: 1rem 1.5rem;
-    font-family: var(--font-display);
-    font-size: 1.3rem;
-    letter-spacing: 0.08em;
-  }
-
-  .result-body { padding: 1.5rem; display: grid; gap: 1rem; }
-
-  .result-row {
+  /* PROGRESS BAR */
+  .progress-container { margin-top: 1rem; }
+  .progress-label {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid var(--border);
-    gap: 1rem;
-  }
-
-  .result-row:last-child { border-bottom: none; padding-bottom: 0; }
-
-  .result-key {
     font-size: 0.85rem;
-    color: var(--gray);
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    flex-shrink: 0;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
   }
 
-  .result-val {
-    font-family: var(--font-head);
+  .progress-bar {
+    height: 10px;
+    background: var(--bg-main);
+    border-radius: 99px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+  }
+
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--primary), var(--accent-gold));
+    border-radius: 99px;
+    transition: width 0.5s ease;
+  }
+
+  /* CALCULATOR */
+  .calc-section { padding: 4rem 0; }
+
+  .section-title-wrap {
+    text-align: center;
+    max-width: 600px;
+    margin: 0 auto 3rem;
+  }
+
+  .section-title {
+    font-family: var(--font-heading);
+    font-size: 2.2rem;
+    font-weight: 800;
+    margin-top: 0.5rem;
+  }
+
+  .wizard-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 2.5rem;
+    max-width: 780px;
+    margin: 0 auto;
+    box-shadow: var(--shadow);
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+
+  .full-width { grid-column: span 2; }
+
+  label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  select.form-control {
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 1rem;
+  }
+
+  .btn-submit {
+    width: 100%;
+    background: var(--primary);
+    color: #FFF;
+    font-family: var(--font-heading);
     font-size: 1.1rem;
     font-weight: 700;
-    color: var(--white);
-    text-align: right;
-  }
-
-  .result-val.highlight { color: var(--red); font-size: 1.3rem; }
-
-  .disclaimer {
-    margin-top: 1rem;
     padding: 1rem;
-    background: rgba(192,24,26,0.08);
-    border-left: 3px solid var(--red);
-    font-size: 0.82rem;
-    color: var(--light);
-    line-height: 1.6;
-  }
-
-  .whatsapp-btn {
-    display: block;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
     margin-top: 1.5rem;
-    background: #25D366;
-    color: #fff;
-    font-family: var(--font-display);
-    font-size: 1.4rem;
-    letter-spacing: 0.1em;
-    padding: 1rem;
-    text-align: center;
-    text-decoration: none;
     transition: background 0.2s;
   }
 
-  .whatsapp-btn:hover { background: #1aab52; }
+  .btn-submit:hover { background: var(--primary-hover); }
 
-  /* PROTOCOLS */
-  .protocols { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-top: 2rem; }
-
-  .protocol {
-    background: var(--dark);
-    padding: 1.5rem;
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 1rem;
-    align-items: start;
-  }
-
-  .protocol-tag {
-    background: var(--red);
-    color: var(--white);
-    font-family: var(--font-head);
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    padding: 0.3rem 0.6rem;
-    white-space: nowrap;
-    text-transform: uppercase;
-  }
-
-  .protocol-tag.outline {
-    background: transparent;
-    border: 1px solid var(--red);
-    color: var(--red);
-  }
-
-  .protocol-name { font-family: var(--font-head); font-size: 1.1rem; font-weight: 700; margin-bottom: 0.3rem; }
-  .protocol-desc { font-size: 0.88rem; color: var(--light); line-height: 1.6; }
-
-  /* HOW IT WORKS */
-  .steps { display: grid; gap: 0; margin-top: 2rem; }
-
-  .step {
-    display: grid;
-    grid-template-columns: 3rem 1fr;
-    gap: 1rem;
-    padding: 1.5rem 0;
-    border-bottom: 1px solid var(--border);
-    align-items: start;
-  }
-
-  .step:last-child { border-bottom: none; }
-
-  .step-num { font-family: var(--font-display); font-size: 2.5rem; color: var(--red); line-height: 1; }
-  .step-title { font-family: var(--font-head); font-size: 1.1rem; font-weight: 700; margin-bottom: 0.3rem; }
-  .step-desc { font-size: 0.88rem; color: var(--light); line-height: 1.6; }
-
-  /* DELIVERY ZONE */
-  .zone-box {
-    border: 1px solid var(--border);
-    background: var(--dark);
-    padding: 1.5rem;
+  /* DETAILED RESULT BOX */
+  .result-box {
+    display: none;
     margin-top: 2rem;
+    background: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.8rem;
   }
 
-  .zone-title {
-    font-family: var(--font-head);
-    font-size: 1rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    margin-bottom: 1rem;
-    color: var(--white);
-  }
+  .result-box.active { display: block; }
 
-  .zone-row {
+  .summary-row {
     display: flex;
     justify-content: space-between;
-    padding: 0.6rem 0;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.88rem;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.92rem;
   }
 
-  .zone-row:last-child { border-bottom: none; }
-  .zone-area { color: var(--light); }
-  .zone-fee { font-family: var(--font-head); font-weight: 700; color: var(--red); }
-  .zone-fee.free { color: #25D366; }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-label { color: var(--text-secondary); }
+  .summary-val { font-weight: 700; text-align: right; }
+  .summary-val.gold { color: var(--accent-gold); font-size: 1.2rem; }
 
-  /* TRUST */
-  .trust-grid {
+  .discount-banner {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: var(--radius-sm);
+    background: var(--accent-gold-soft);
+    border: 1px solid rgba(255, 184, 0, 0.3);
+    color: var(--accent-gold);
+    font-size: 0.88rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-whatsapp {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    background: #25D366;
+    color: #FFF;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.1rem;
+    padding: 1rem;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    margin-top: 1.5rem;
+    transition: opacity 0.2s;
+  }
+
+  .btn-whatsapp:hover { opacity: 0.9; }
+
+  /* DETAILS */
+  .details-section {
+    padding: 4rem 0;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .cards-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1px;
-    background: var(--border);
-    border: 1px solid var(--border);
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
     margin-top: 2rem;
   }
 
-  .trust-card { background: var(--dark); padding: 1.25rem; text-align: center; }
-  .trust-label { font-size: 0.78rem; color: var(--gray); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.3rem; }
-  .trust-value { font-family: var(--font-head); font-size: 1rem; font-weight: 700; color: var(--white); }
-
-  /* FOOTER */
-  footer {
-    background: var(--dark);
-    border-top: 1px solid var(--border);
-    padding: 2rem 1.5rem;
-    text-align: center;
+  .info-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.8rem;
   }
 
-  .footer-brand { font-family: var(--font-display); font-size: 2rem; color: var(--red); margin-bottom: 0.5rem; }
-  .footer-sub { font-size: 0.85rem; color: var(--gray); }
+  .info-card h4 {
+    font-family: var(--font-heading);
+    font-size: 1.2rem;
+    margin-bottom: 0.5rem;
+  }
 
-  /* SCROLL REVEAL */
-  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.5s ease, transform 0.5s ease; }
-  .reveal.visible { opacity: 1; transform: none; }
+  .info-card p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+  }
 
-  @media (max-width: 540px) {
-    .form-row { grid-template-columns: 1fr; }
-    .hero-cta { flex-direction: column; align-items: center; }
-    .stats { gap: 1rem; }
+  footer {
+    border-top: 1px solid var(--border-color);
+    padding: 2rem 0;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 868px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 2.5rem; }
+    .form-grid { grid-template-columns: 1fr; }
+    .full-width { grid-column: span 1; }
+    .hero-title { font-size: 2.4rem; }
   }
 </style>
 </head>
 <body>
 
-<!-- NAV -->
-<nav>
-  <span class="nav-brand">PUMPING IRON</span>
-  <div style="display:flex; gap:1.25rem; align-items:center;">
-    <a href="competition.html" style="color:var(--light); font-family:var(--font-head); font-size:0.95rem; font-weight:600; letter-spacing:0.05em; text-decoration:none;">compete</a>
-    <a href="reviews.html" style="color:var(--light); font-family:var(--font-head); font-size:0.95rem; font-weight:600; letter-spacing:0.05em; text-decoration:none;">Reviews</a>
-    <a class="nav-order" href="#calculator">GET MY DOSE</a>
+<header>
+  <div class="container nav-wrapper">
+    <a href="#" class="logo">PUMPING <span>IRON</span></a>
+    <a href="#calculator" class="nav-btn">Order Now</a>
   </div>
-</nav>
+</header>
 
-<!-- HERO -->
-<div class="hero">
-  <p class="hero-eyebrow">Pure Creatine Monohydrate · Kiambu</p>
-  <h1 class="hero-title">YOUR DOSE.<br><span>YOUR GYM.</span><br>YOUR WAY.</h1>
-  <p class="hero-sub">Get your exact creatine dose calculated per your body weight</p>
-  <div class="hero-cta">
-    <a class="btn-primary" href="#calculator">Calculate my dose</a>
-    <a class="btn-outline" href="#how">How it works</a>
-  </div>
-</div>
+<section class="hero">
+  <div class="container hero-grid">
+    <div>
+      <span class="badge badge-gold">⚡ Loyalty Program Built for Lifters</span>
+      <h1 class="hero-title">Order 4 Times consecutively.<br><span>Get Free Membership.</span></h1>
+      <p class="hero-subtitle">We deliver authentic USN Creatine Monohydrate pre-portioned to your precise body weight. Check your streak or place an order below.</p>
+      <div style="margin-top:1.5rem; display:flex; flex-wrap:wrap; gap:0.8rem;">
+        <a href="membership.html" class="btn-action" style="text-decoration:none;">Learn More About Ironclad Membership</a>
+      </div>
+    </div>
 
-<!-- STATS -->
-<div class="stats">
-  <div class="stat">
-    <span class="stat-num">100%</span>
-    <span class="stat-label">Pure monohydrate</span>
-  </div>
-  <div class="stat">
-    <span class="stat-num">3g+</span>
-    <span class="stat-label">Exact body-weight dose</span>
-  </div>
-  <div class="stat">
-    <span class="stat-num">KSh 42</span>
-    <span class="stat-label">Starting price</span>
-  </div>
-  <div class="stat">
-    <span class="stat-num">USN</span>
-    <span class="stat-label">Certified source</span>
-  </div>
-</div>
+    <div class="tracker-card">
+      <div class="tracker-header">
+        <span class="badge badge-red" id="tracker-badge">Standard Tier</span>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">M-Pesa Verification</span>
+      </div>
 
-<!-- WHY -->
-<section class="reveal">
-  <p class="section-label">What makes us different</p>
-  <h2 class="section-title">YOUR EXACT DOSE. WHEN YOU NEED IT.</h2>
-  <div class="why-grid">
-    <div class="why-card">
-      <div class="why-icon">⚖️</div>
-      <p class="why-title">Exact dosing</p>
-      <p class="why-text">Your dose is calculated from your body weight — not a generic scoop. You get precisely what your body needs, nothing more.</p>
-    </div>
-    <div class="why-card">
-      <div class="why-icon">📦</div>
-      <p class="why-title">Pre-portioned for you</p>
-      <p class="why-text">We weigh and fill every sachet to your calculation. Order a week or a month — each sachet is ready to take, no measuring needed.</p>
-    </div>
-    <div class="why-card">
-      <div class="why-icon">🏋️</div>
-      <p class="why-title">Delivery</p>
-      <p class="why-text"> we deliver on a schedule. Pick up and get on with your training.</p>
-    </div>
-    <div class="why-card">
-      <div class="why-icon">🔬</div>
-      <p class="why-title">Certified product</p>
-      <p class="why-text">We use authentic USN creatine monohydrate — the most studied supplement in sport. Pre-portioned for your convenience.</p>
+      <h3 style="font-family: var(--font-heading); margin-bottom: 0.5rem;">Member Streak Lookup</h3>
+      <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.2rem;">Enter your M-Pesa phone number to pull up your verified streak from our database:</p>
+
+      <div class="input-group-row">
+        <input type="tel" id="verify-phone" class="form-control" placeholder="e.g. 0712345678" aria-label="M-Pesa phone for lookup" aria-describedby="verify-help">
+        <button class="btn-action" id="verify-btn" onclick="lookupMemberPhone()">Verify</button>
+      </div>
+      <div id="verify-help" style="font-size:0.82rem; color:var(--text-secondary); margin-top:0.5rem;">Enter your M-Pesa number (07XXXXXXXX or +2547XXXXXXXX). Click Verify to pull your streak.</div>
+
+      <div class="progress-container">
+        <div class="progress-label">
+          <span id="tracker-title">Streak Progress</span>
+          <span id="tracker-count" style="font-weight: 700;">0 / 4 Orders</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="tracker-progress"></div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- CALCULATOR -->
-<div id="calculator">
-  <div class="calc-inner">
-    <p class="section-label">Dosage calculator</p>
-    <h2 class="section-title">FIND YOUR EXACT DOSE</h2>
-    <p style="color: var(--light); font-size:0.92rem; margin-top:-0.5rem;">Enter your weight and goal. We calculate your exact protocol and price — no guesswork.</p>
+  <section class="details-section" aria-labelledby="how-title" style="padding-top:1.5rem;">
+    <div class="container">
+      <h2 id="how-title" class="section-title" style="text-align:center; font-size:1.6rem;">How It Works</h2>
+      <p style="text-align:center; color:var(--text-secondary); max-width:820px; margin:0.6rem auto 1.2rem;">Order in three easy steps — no technical skills required. We handle packaging and delivery, you focus on gains.</p>
 
-    <div class="calc-form">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label" for="weight">Body weight (kg)</label>
-          <input class="form-input" type="number" id="weight" placeholder="e.g. 75" min="30" max="250">
+      <div class="cards-grid">
+        <div class="info-card">
+          <h4>1. Enter Your Phone</h4>
+          <p>Provide the M-Pesa number you use for payments so we can verify your loyalty streak and apply member discounts automatically.</p>
         </div>
-        <div class="form-group">
-          <label class="form-label" for="goal">Your goal</label>
-          <select class="form-select" id="goal" onChange="conditionalRenderDuration()">
-            <option value="">Select goal</option>
-            <option value="loading">Fast Saturation — loading phase (5 days)</option>
-            <option value="maintenance">Ongoing Daily Maintenance</option>
+        <div class="info-card">
+          <h4>2. Choose Your Plan</h4>
+          <p>Select your weight and goal — we calculate precise sachet dosing and show the final price with any discounts applied.</p>
+        </div>
+        <div class="info-card">
+          <h4>3. Pay & Confirm</h4>
+          <p>Tap the WhatsApp button to send a pre-filled order message, or copy it to your clipboard to paste into your preferred app.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="calc-section" id="calculator">
+  <div class="container">
+    <div class="section-title-wrap">
+      <span class="badge badge-red">Precision Dosing</span>
+      <h2 class="section-title">Configure Your Plan</h2>
+    </div>
+
+    <div class="wizard-card">
+      <div class="form-grid">
+        <div class="full-width">
+          <label for="phone">M-Pesa Phone Number</label>
+          <input type="tel" id="phone" class="form-control" placeholder="07XX XXX XXX" aria-describedby="phone-help" aria-label="Your M-Pesa phone number" required>
+          <div id="phone-help" style="font-size:0.82rem; color:var(--text-secondary); margin-top:0.35rem;">Use the same phone number you use for M-Pesa payments.</div>
+        </div>
+
+        <div>
+          <label for="weight">Body Weight (kg)</label>
+          <input type="number" id="weight" class="form-control" placeholder="e.g. 75" min="30" max="250" required>
+        </div>
+
+        <div>
+          <label for="goal">Your Goal</label>
+          <select id="goal" class="form-control" onchange="toggleGoalFields()" required>
+            <option value="">Select Phase</option>
+            <option value="loading">Fast Saturation (5 Days)</option>
+            <option value="maintenance">Daily Maintenance</option>
           </select>
         </div>
+
+        <div id="duration-group" style="display: none;">
+          <label for="duration">Duration</label>
+          <select id="duration" class="form-control" required>
+            <option value="">Select Duration</option>
+            <option value="7">1 Week</option>
+            <option value="14">2 Weeks</option>
+            <option value="21">3 Weeks</option>
+            <option value="30">1 Month</option>
+          </select>
+        </div>
+
+        <div id="training-group" style="display: none;">
+          <label for="trainingDays">Training Days / Week</label>
+          <select id="trainingDays" class="form-control">
+            <option value="4" selected>4 Days a Week</option>
+            <option value="1">1 Day</option>
+            <option value="2">2 Days</option>
+            <option value="3">3 Days</option>
+            <option value="5">5 Days</option>
+            <option value="6">6 Days</option>
+            <option value="7">7 Days</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="location">Area (Kiambu County)</label>
+          <input type="text" id="location" class="form-control" placeholder="e.g. Kiambu Town, Ruiru" required>
+        </div>
+
+        <div>
+          <label for="gym">Pickup Location / Gym</label>
+          <input type="text" id="gym" class="form-control" placeholder="e.g. Gym Name / Landmark">
+        </div>
       </div>
 
-      <div class="form-group" id="conditional-select" style="display:none;">
-        <label class="form-label" for="duration">How long do you need it for?</label>
-        <select class="form-select" id="duration">
-          <option value="">Select Duration</option>    
-          <option value="7">1 Week</option>
-          <option value="14">2 Weeks </option>
-          <option value="21">3 Weeks </option>
-          <option value="30">1 Month </option>
-        </select>
-      </div>
+      <button class="btn-submit" onclick="calculatePlan()">CALCULATE & CONFIRM PLAN</button>
 
-      <div class="form-group" id="training-days-select" style="display:none;">
-        <label class="form-label" for="trainingDays">How many days a week do you train?</label>
-        <select class="form-select" id="trainingDays">
-          <option value="0">0 — Rest / off-season</option>
-          <option value="1">1 day</option>
-          <option value="2">2 days</option>
-          <option value="3">3 days</option>
-          <option value="4" selected>4 days</option>
-          <option value="5">5 days</option>
-          <option value="6">6 days</option>
-          <option value="7">7 days</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="location">Your area (Kiambu County)</label>
-        <input class="form-input" type="text" id="location" placeholder="e.g. Kiambu town, Ruiru, Thika, Limuru...">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="gym">Preferred pickup location(optional)</label>
-        <input class="form-input" type="text" id="gym" placeholder="e.g. gym name or nearest landmark">
-      </div>
-
-      <div class="delivery-note">
-        📍 <strong>Delivery:</strong>Fee subject to your location.
-      </div>
-
-      <button class="calc-btn" onclick="calculate()">CALCULATE MY PLAN</button>
-    </div>
-
-    <div class="result" id="result">
-      <div class="result-header" id="result-title">YOUR PLAN</div>
-      <div class="result-body" id="result-body"></div>
-      <div style="padding: 0 1.5rem;">
-        <div class="disclaimer" id="result-disclaimer"></div>
-      </div>
-      <div style="padding: 1.5rem;">
-        <a class="whatsapp-btn" id="whatsapp-link" href="#" target="_blank">📲 ORDER ON WHATSAPP</a>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- PROTOCOLS -->
-<section class="reveal">
-  <p class="section-label">Choose your goal</p>
-  <h2 class="section-title">TWO PATHS</h2>
-  <div class="protocols">
-    <div class="protocol">
-      <span class="protocol-tag">Fast</span>
-      <div>
-        <p class="protocol-name">Fast Saturation (Loading)</p>
-        <p class="protocol-desc">5 days of higher-dose sachets, calculated to your weight class, saturates your muscles quickly. Best for athletes who want results fast and don't mind the upfront cost.</p>
-      </div>
-    </div>
-    <div class="protocol">
-      <span class="protocol-tag outline">Ongoing</span>
-      <div>
-        <p class="protocol-name">Ongoing Daily Maintenance</p>
-        <p class="protocol-desc">Your weight-class dose on training days, a light 3g dose on rest days. Full saturation builds naturally over 3–4 weeks. Choose 1 week, 2 weeks, 3 weeks, or a full month — priced exactly for what you need.</p>
+      <!-- FULL DETAILED ORDER SUMMARY -->
+      <div class="result-box" id="result-box">
+        <h4 style="font-family: var(--font-heading); margin-bottom: 1rem; color: var(--text-primary); border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;" id="plan-title">YOUR PLAN SUMMARY</h4>
+        <div id="summary-rows"></div>
+        <div id="discount-banner-container"></div>
+        <div id="membership-benefits-container" style="margin-top:0.75rem;"></div>
+        <a id="whatsapp-btn" href="#" target="_blank" class="btn-whatsapp">
+          <span>📲 PAY & ORDER VIA WHATSAPP</span>
+        </a>
       </div>
     </div>
   </div>
 </section>
 
-<!-- HOW IT WORKS -->
-<section id="how" class="reveal">
-  <p class="section-label">The process</p>
-  <h2 class="section-title">HOW IT WORKS</h2>
-  <div class="steps">
-    <div class="step">
-      <span class="step-num">1</span>
-      <div>
-        <p class="step-title">Calculate your dose</p>
-        <p class="step-desc">Enter your weight, goal, and training days above. The engine calculates your exact daily dose in grams and your price per sachet.</p>
-      </div>
+<section class="details-section">
+  <div class="container">
+    <div class="section-title-wrap">
+      <span class="badge badge-gold">Guaranteed Quality</span>
+      <h2 class="section-title">Built for Performance</h2>
     </div>
-    <div class="step">
-      <span class="step-num">2</span>
-      <div>
-        <p class="step-title">Order on WhatsApp</p>
-        <p class="step-desc">Tap the order button. Your details are pre-filled. Confirm how many days supply you want and your pickup area.</p>
+
+    <div class="cards-grid">
+      <div class="info-card">
+        <h4>100% Authentic USN Powder</h4>
+        <p>Sourced exclusively from certified USN suppliers. Pure micro-filtered creatine monohydrate with zero additives.</p>
       </div>
-    </div>
-    <div class="step">
-      <span class="step-num">3</span>
-      <div>
-        <p class="step-title">We package your exact dose</p>
-        <p class="step-desc">Every sachet is weighed and filled to your body-weight calculation. Not a generic scoop — your exact grams.</p>
+      <div class="info-card">
+        <h4>Airtight Mylar Packaging</h4>
+        <p>Individual pre-portioned sachets designed to prevent moisture absorption and keep your dosage exact on the go.</p>
       </div>
-    </div>
-    <div class="step">
-      <span class="step-num">4</span>
-      <div>
-        <p class="step-title">Pick up at your gym</p>
-        <p class="step-desc">We deliver on scheduled days to your chosen  area. Pick up your order and stay consistent.</p>
+      <div class="info-card">
+        <h4>Ironclad Loyalty Rewards</h4>
+        <p>Complete 4 orders using your phone number to permanently unlock 10% discounts and 30% milestone rates.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- TRUST -->
-<section class="reveal">
-  <p class="section-label">What you're getting</p>
-  <h2 class="section-title">NO SHORTCUTS ON THE PRODUCT</h2>
-  <div class="trust-grid">
-    <div class="trust-card">
-      <p class="trust-label">Source</p>
-      <p class="trust-value">USN Creatine Monohydrate</p>
-    </div>
-    <div class="trust-card">
-      <p class="trust-label">Form</p>
-      <p class="trust-value">Pure powder, no fillers</p>
-    </div>
-    <div class="trust-card">
-      <p class="trust-label">Minimum dose</p>
-      <p class="trust-value">3g — science backed floor</p>
-    </div>
-    <div class="trust-card">
-      <p class="trust-label">Hydration note</p>
-      <p class="trust-value">Drink more water on creatine</p>
-    </div>
-    <div class="trust-card">
-      <p class="trust-label">Cycling</p>
-      <p class="trust-value">Not required — stay consistent</p>
-    </div>
-    <div class="trust-card">
-      <p class="trust-label">For women</p>
-      <p class="trust-value">Equally effective, same dosing</p>
-    </div>
-  </div>
-  <p style="margin-top:1rem; font-size:0.8rem; color: var(--gray);">⚠️ Not recommended for under 18s or those with kidney conditions without medical advice.</p>
-</section>
-
-<!-- COMPLIANCE -->
-<section class="reveal">
-  <p class="section-label">How this works</p>
-  <h2 class="section-title">A PREP SERVICE, NOT A MANUFACTURER</h2>
-  <p style="color: var(--light); font-size:0.92rem; margin-bottom:2rem; line-height:1.8;">Pumping Iron is a gym nutrition prep service. We pre-portion authentic, certified USN Creatine Monohydrate into single-serving sachets for your convenience. We are not a supplement manufacturer or a retail brand.</p>
-</section>
-
-<!-- FOOTER -->
 <footer>
-  <p class="footer-brand">PUMPING IRON</p>
-  <p class="footer-sub">Creatine Monohydrate · Kenya · 0115509593</p>
-  <p style="margin-top:0.5rem; font-size:0.8rem; color: var(--gray);">Supports recovery · Increased strength + stamina</p>
+  <div class="container">
+    <p>PUMPING IRON — Gym Nutrition Prep Service · Kiambu County, Kenya · 0115509593</p>
+  </div>
 </footer>
 
 <script>
+  // 1. SUPABASE CLIENT CONFIGURATION
+  const SUPABASE_URL = 'https://zhdpiscqxaowjrfidfis.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_AFavS_mQZhcxvwlAFx_B3g_k2MpkT8b';
+  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const USING_SUPABASE = !SUPABASE_URL.includes('YOUR_SUPABASE') && !SUPABASE_ANON_KEY.includes('YOUR_');
 
-// ----- COSTS -----
-const TUB_COST = 3000;
-const TUB_GRAMS = 410;
-const PPG = TUB_COST / TUB_GRAMS;              // KSh 7.317 per gram
+  // 2. FORMULA PRICING CONSTANTS
+  const TUB_COST = 3000;
+  const TUB_GRAMS = 410;
+  const PPG = TUB_COST / TUB_GRAMS;
 
-const MYLAR_SMALL = 1095 / 800;                // KSh 1.369 per sachet (3.0g & 4.5g)
-const MYLAR_LARGE  = 1095 / 400;               // KSh 2.738 per sachet (6.0g, 7.5g & 9.0g)
+  const MYLAR_SMALL = 1095 / 800;
+  const MYLAR_LARGE = 1095 / 400;
+  const BASE_PROFIT = 22;
 
-const BASE_PROFIT = 18;                        // Floor profit, Class A
-const DELIVERY_FEE_KIAMBU = 120;               // Flat rate for Kiambu County
+  const WEIGHT_CLASSES = [
+    { name: 'A', min: 30,  max: 50,  label: '30–50kg',  sachetG: 3.0, bonusProfit: 0 },
+    { name: 'B', min: 51,  max: 67,  label: '51–67kg',  sachetG: 4.5, bonusProfit: 2 },
+    { name: 'C', min: 68,  max: 80,  label: '68–80kg',  sachetG: 6.0, bonusProfit: 4 },
+    { name: 'D', min: 81,  max: 100, label: '81–100kg', sachetG: 7.5, bonusProfit: 6 },
+    { name: 'E', min: 101, max: 250, label: '101kg+',   sachetG: 9.0, bonusProfit: 8 },
+  ];
 
-// ----- WEIGHT CLASSES (progressive profit step-up) -----
-const WEIGHT_CLASSES = [
-  { name: 'A', min: 30,  max: 50,  label: '30–50kg',  sachetG: 3.0, mylar: 'small', bonusProfit: 0 }, // Profit: 18
-  { name: 'B', min: 51,  max: 67,  label: '51–67kg',  sachetG: 4.5, mylar: 'small', bonusProfit: 2 }, // Profit: 20
-  { name: 'C', min: 68,  max: 80,  label: '68–80kg',  sachetG: 6.0, mylar: 'large', bonusProfit: 4 }, // Profit: 22
-  { name: 'D', min: 81,  max: 100, label: '81–100kg', sachetG: 7.5, mylar: 'large', bonusProfit: 6 }, // Profit: 24
-  { name: 'E', min: 101, max: 250, label: '101kg+',   sachetG: 9.0, mylar: 'large', bonusProfit: 8 }, // Profit: 26
-];
+  function getWeightClass(kg) { return WEIGHT_CLASSES.find(c => kg >= c.min && kg <= c.max); }
+  function round2(n) { return Math.round(n * 100) / 100; }
+  function getMylarCost(grams) { return grams <= 4.5 ? MYLAR_SMALL : MYLAR_LARGE; }
+  function getSachetCost(grams) { return round2((PPG * grams) + getMylarCost(grams)); }
 
-function getWeightClass(kg) {
-  return WEIGHT_CLASSES.find(c => kg >= c.min && kg <= c.max);
-}
-
-function round2(n) { return Math.round(n * 100) / 100; }
-function waterRec(kg) { return round2(kg * 0.04); }
-
-// ----- PRICING FUNCTIONS -----
-function getMylarCost(grams) {
-  return grams <= 4.5 ? MYLAR_SMALL : MYLAR_LARGE;
-}
-
-function getSachetCost(grams) {
-  return round2((PPG * grams) + getMylarCost(grams));
-}
-
-// grams = dose size, bonus = weight class step-up profit (0 for rest-day 3g dose)
-function getSachetPrice(grams, bonus = 0) {
-  const rawCost = getSachetCost(grams);
-  const totalProfit = BASE_PROFIT + bonus;
-  return Math.ceil(rawCost + totalProfit); // whole-shilling checkout price
-}
-
-const DURATIONS = [
-  { value: 7,  label: '1 Week'  },
-  { value: 14, label: '2 Weeks' },
-  { value: 21, label: '3 Weeks' },
-  { value: 30, label: '1 Month' },
-];
-
-function getDuration(days) {
-  return DURATIONS.find(d => d.value === days);
-}
-
-// ----- MAIN CALCULATE FUNCTION -----
-function calculate() {
-  const weight = parseFloat(document.getElementById('weight').value);
-  const goal = document.getElementById('goal').value;
-  const duration = parseInt(document.getElementById('duration').value);
-  const trainingDaysPerWeek = parseInt(document.getElementById('trainingDays')?.value || '0');
-  const location = document.getElementById('location').value.trim();
-  const gym = document.getElementById('gym').value.trim();
-
-  // --- VALIDATION ---
-  if (!weight || weight < 30 || weight > 250) {
-    alert('Please enter a valid body weight between 30 and 250 kg.');
-    return;
-  }
-  if (!goal) {
-    alert('Please select your goal.');
-    return;
-  }
-  if (goal !== "loading" && !duration) {
-    alert('Please select how long you need it for.');
-    return;
-  }
-  if (goal !== "loading" && (isNaN(trainingDaysPerWeek) || trainingDaysPerWeek < 0 || trainingDaysPerWeek > 7)) {
-    alert('Please select your training days per week (0-7).');
-    return;
-  }
-  if (!location) {
-    alert('Please enter your area so we can confirm delivery.');
-    return;
+  function formatKES(n) {
+    try {
+      return 'KSh ' + new Intl.NumberFormat('en-KE').format(Math.round(n));
+    } catch (e) {
+      return 'KSh ' + Math.round(n);
+    }
   }
 
-  const wc = getWeightClass(weight);
-  const water = waterRec(weight);
-  const sachetGrams = wc.sachetG;
-  const pickupNote = gym ? `Pickup gym: ${gym}\n` : '';
-
-  let planName, title, total, sachetSubtotal, disclaimer, orderMsg;
-
-  if (goal === 'loading') {
-    // --- LOADING PLAN: 5 days, 4 sachets/day, fixed, no rest-day split ---
-    const loadingDays = 5;
-    const sachetsPerDay = 4;
-    const totalSachets = sachetsPerDay * loadingDays;
-    const trainingSachetPrice = getSachetPrice(sachetGrams, wc.bonusProfit);
-    total = round2(trainingSachetPrice * totalSachets);
-
-    planName = 'Fast Saturation (Loading)';
-    title = 'FAST SATURATION PLAN';
-    disclaimer = `You are in Weight Class ${wc.name} (${wc.label}). Take 4 × ${sachetGrams}g sachets daily, spread through the day, for 5 days — morning, midday, post-workout, evening. Drink ${water}L of water per day minimum.`;
-
-    renderResult(title, [
-      { k: 'Your weight', v: weight + ' kg' },
-      { k: 'Weight class', v: `Class ${wc.name} (${wc.label})` },
-      { k: 'Sachet size', v: sachetGrams + 'g' },
-      { k: 'Price per sachet', v: 'KSh ' + trainingSachetPrice },
-      { k: 'Plan length', v: '5 days (fixed)' },
-      { k: 'Daily intake', v: `4 × ${sachetGrams}g sachets/day` },
-      { k: 'Total sachets', v: totalSachets + ' sachets' },
-      { k: 'TOTAL', v: 'KSh ' + total, hl: true },
-      { k: 'Daily water intake', v: water + ' litres minimum' },
-    ], disclaimer);
-
-    orderMsg = `Hello I'd like to order.\n\nPlan: ${planName}\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\n\nSachet size: ${sachetGrams}g\nDuration: 5 days (fixed)\nTotal sachets: ${totalSachets}\nTOTAL: KSh ${total}\nLocation: ${location}, ${gym}\n\nPlease confirm and process my order.`;
-    setWhatsapp(orderMsg);
-
-  } else {
-    // --- MAINTENANCE PLAN: training-day dose vs rest-day 3g dose ---
-    const durObj = getDuration(duration);
-    const totalDays = duration;
-
-    // Split total days across the cycle proportionally to training days/week
-    const totalTrainingDays = Math.round((trainingDaysPerWeek / 7) * totalDays);
-    const totalRestDays = totalDays - totalTrainingDays;
-
-    const trainingSachetPrice = getSachetPrice(sachetGrams, wc.bonusProfit) + 5;
-    const restSachetPrice = getSachetPrice(3.0, 0); // Class A 3g maintenance dose on rest days
-
-    const trainingSubtotal = round2(totalTrainingDays * trainingSachetPrice);
-    const restSubtotal = round2(totalRestDays * restSachetPrice);
-    total = round2(trainingSubtotal + restSubtotal);
-
-    planName = 'Ongoing Daily Maintenance';
-    title = 'MAINTENANCE PLAN';
-    disclaimer = `You are in Weight Class ${wc.name} (${wc.label}). On training days take 1 × ${sachetGrams}g sachet; on rest days take 1 × 3g sachet — your body doesn't need the full dose when you're not lifting. Full saturation builds over 3–4 weeks of consistent use. Drink ${water}L of water per day.`;
-
-    renderResult(title, [
-      { k: 'Your weight', v: weight + ' kg' },
-      { k: 'Weight class', v: `Class ${wc.name} (${wc.label})` },
-      { k: 'Duration', v: durObj.label },
-      { k: 'Training days/week', v: trainingDaysPerWeek + ' days' },
-      { k: 'Training days (dose)', v: `${totalTrainingDays} × ${sachetGrams}g @ KSh ${trainingSachetPrice}` },
-      { k: 'Rest days (dose)', v: `${totalRestDays} × 3.0g @ KSh ${restSachetPrice}` },
-      { k: 'Training subtotal', v: 'KSh ' + trainingSubtotal },
-      { k: 'Rest subtotal', v: 'KSh ' + restSubtotal },
-      { k: 'Total', v: 'KSh ' + total },
-      { k: 'Daily water intake', v: water + ' litres minimum' },
-    ], disclaimer);
-
-    orderMsg = `Hello I'd like to order.\n\nPlan: ${planName}\nWeight: ${weight}kg\nWeight Class: ${wc.name} (${wc.label})\nTraining days/week: ${trainingDaysPerWeek}\n\nDuration: ${durObj.label}\nTraining days: ${totalTrainingDays} × ${sachetGrams}g @ KSh ${trainingSachetPrice}\nRest days: ${totalRestDays} × 3.0g @ KSh ${restSachetPrice}\nTOTAL: KSh ${total}\nLocation: ${location}, ${gym}\n\nPlease confirm and process my order.`;
-    setWhatsapp(orderMsg);
+  function getSachetPrice(grams, bonus = 0) {
+    const rawCost = getSachetCost(grams);
+    return Math.ceil(rawCost + BASE_PROFIT + bonus);
   }
-}
 
-// ----- RENDER & WHATSAPP HELPERS -----
-function renderResult(title, rows, disclaimer) {
-  document.getElementById('result-title').textContent = title;
-  const body = document.getElementById('result-body');
-  body.innerHTML = '';
-  rows.forEach(r => {
-    const row = document.createElement('div');
-    row.className = 'result-row';
-    row.innerHTML = `<span class="result-key">${r.k}</span><span class="result-val${r.hl ? ' highlight' : ''}">${r.v}</span>`;
-    body.appendChild(row);
-  });
-  document.getElementById('result-disclaimer').textContent = disclaimer;
-
-  const resultEl = document.getElementById('result');
-  resultEl.classList.add('visible');
-  setTimeout(() => resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
-}
-
-function setWhatsapp(msg) {
-  const url = `https://wa.me/254115509593?text=${encodeURIComponent(msg)}`;
-  document.getElementById('whatsapp-link').href = url;
-  document.getElementById('whatsapp-link').style.display = 'block';
-}
-
-// ----- SCROLL REVEAL -----
-const observer = new IntersectionObserver(entries => {
-  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
-}, { threshold: 0.1 });
-document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
-
-function conditionalRenderDuration () {
-  const selection = document.getElementById("goal");
-  const hiddenSelect = document.getElementById("conditional-select");
-  const trainingField = document.getElementById("training-days-select");
-
-  if (selection.value === "loading") {
-    hiddenSelect.style.display = "none";
-    trainingField.style.display = "none";
-  } else {
-    hiddenSelect.style.display = "block";
-    trainingField.style.display = "block";
+  function toggleGoalFields() {
+    const goal = document.getElementById('goal').value;
+    const durGroup = document.getElementById('duration-group');
+    const trainGroup = document.getElementById('training-group');
+    if (goal === 'maintenance') {
+      durGroup.style.display = 'block';
+      trainGroup.style.display = 'block';
+    } else {
+      durGroup.style.display = 'none';
+      trainGroup.style.display = 'none';
+    }
   }
-}
+
+  // 3. FETCH STREAK FROM SUPABASE DB
+  async function fetchStreakFromSupabase(phone) {
+    if (!phone) return 0;
+    const cleanPhone = phone.trim().replace(/\s+/g, '');
+    if (!USING_SUPABASE) {
+      console.warn('Supabase not configured; returning 0 for streak lookup.');
+      return 0;
+    }
+    try {
+      const { data, error } = await supabaseClient
+        .from('memberships')
+        .select('completed_orders')
+        .eq('phone_number', cleanPhone)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Supabase query error:', error);
+        return 0;
+      }
+      return data ? data.completed_orders : 0;
+    } catch (err) {
+      console.error('Fetch failed:', err);
+      return 0;
+    }
+  }
+
+  async function lookupMemberPhone() {
+    const btn = document.getElementById('verify-btn');
+    const phoneInput = document.getElementById('verify-phone');
+    let phone = phoneInput.value.trim();
+    phone = normalizePhone(phone);
+    if (!phone) { alert('Please enter a valid M-Pesa phone number.'); phoneInput.focus(); return; }
+    btn.disabled = true; btn.innerHTML = 'Checking <span class="spinner" aria-hidden="true"></span>';
+    document.getElementById('phone').value = phone;
+    try {
+      await updateTrackerUI(phone);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Verify';
+    }
+  }
+
+  function normalizePhone(raw) {
+    if (!raw) return '';
+    let p = raw.replace(/[^0-9+]/g, '');
+    // Convert local 07... to +2547...
+    if (p.startsWith('0') && p.length >= 9) p = '+254' + p.slice(1);
+    if (p.startsWith('254') && !p.startsWith('+')) p = '+' + p;
+    // basic validation: must start with +2547 and be 13 characters
+    if (!/^\+2547\d{8}$/.test(p)) return '';
+    return p;
+  }
+
+  async function updateTrackerUI(phone) {
+    const count = await fetchStreakFromSupabase(phone);
+    const badge = document.getElementById('tracker-badge');
+    const fill = document.getElementById('tracker-progress');
+    const countLbl = document.getElementById('tracker-count');
+    const titleLbl = document.getElementById('tracker-title');
+
+    if (count >= 4) {
+      badge.textContent = 'Ironclad VIP';
+      badge.className = 'badge badge-gold';
+      fill.style.width = '100%';
+      countLbl.textContent = `${count} Verified Orders`;
+      titleLbl.textContent = 'VIP Status Active';
+    } else {
+      const pct = (count / 4) * 100;
+      badge.textContent = 'Standard Tier';
+      badge.className = 'badge badge-red';
+      fill.style.width = `${pct}%`;
+      countLbl.textContent = `${count} / 4 Orders`;
+      titleLbl.textContent = 'Streak Progress';
+    }
+  }
+
+  // 4. CALCULATE PLAN & SHOW DETAILED SUMMARY
+  async function calculatePlan() {
+    const submitBtn = document.querySelector('.btn-submit');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = 'Calculating <span class="spinner" aria-hidden="true"></span>';
+
+    // normalize phone if possible
+    let phone = document.getElementById('phone').value.trim();
+    const normalized = normalizePhone(phone);
+    if (normalized) phone = normalized;
+    const weight = parseFloat(document.getElementById('weight').value);
+    const goal = document.getElementById('goal').value;
+    const duration = parseInt(document.getElementById('duration').value);
+    const trainingDaysPerWeek = parseInt(document.getElementById('trainingDays')?.value || '4');
+    const location = document.getElementById('location').value.trim();
+    const gym = document.getElementById('gym').value.trim();
+
+    if (!phone || phone.length < 9) { alert('Please enter your M-Pesa phone number.'); return; }
+    if (!weight || weight < 30 || weight > 250) { alert('Please enter a valid weight.'); return; }
+    if (!goal) { alert('Please select your goal.'); return; }
+    if (goal !== "loading" && !duration) { alert('Please select duration.'); return; }
+    if (!location) { alert('Please enter your location.'); return; }
+
+    const wc = getWeightClass(weight);
+    if (!wc) {
+      alert('Please enter a supported weight between 30 and 250 kg.');
+      return;
+    }
+    const currentOrders = await fetchStreakFromSupabase(phone);
+    const targetOrderNumber = currentOrders + 1;
+    
+    const isMember = targetOrderNumber >= 4;
+    const isMilestoneOrder = targetOrderNumber % 4 === 0;
+
+    let planName = '', total = 0, originalTotal = 0, discountNote = '';
+    let summaryRowsHtml = '';
+
+    if (goal === 'loading') {
+      planName = 'Fast Saturation (5 Days)';
+      const totalSachets = 20;
+      const sachetPrice = getSachetPrice(wc.sachetG, wc.bonusProfit);
+      const sachetSubtotal = round2(sachetPrice * totalSachets);
+      originalTotal = sachetSubtotal;
+
+      if (isMilestoneOrder) {
+        total = round2(originalTotal * 0.70);
+        discountNote = '🎁 MILESTONE UNLOCKED: 30% OFF Loyalty Reward Applied!';
+      } else if (isMember) {
+        total = round2(originalTotal * 0.90);
+        discountNote = '👑 IRONCLAD MEMBER RATE: 10% OFF Applied!';
+      } else {
+        total = originalTotal;
+      }
+
+      summaryRowsHtml = `
+        <div class="summary-row"><span class="summary-label">Phone Number</span><span class="summary-val">${phone}</span></div>
+        <div class="summary-row"><span class="summary-label">Weight Class</span><span class="summary-val">Class ${wc.name} (${wc.label} - ${wc.sachetG}g)</span></div>
+        <div class="summary-row"><span class="summary-label">Phase / Plan</span><span class="summary-val">${planName}</span></div>
+        <div class="summary-row"><span class="summary-label">Price per Sachet</span><span class="summary-val">${formatKES(sachetPrice)}</span></div>
+        <div class="summary-row"><span class="summary-label">Total Sachets</span><span class="summary-val">${totalSachets} Sachets</span></div>
+        <div class="summary-row"><span class="summary-label">Sachets Subtotal</span><span class="summary-val">${formatKES(sachetSubtotal)}</span></div>
+        <div class="summary-row"><span class="summary-label">Status Tier</span><span class="summary-val">${isMember ? '👑 Ironclad VIP' : 'Standard Tier'}</span></div>
+        <div class="summary-row"><span class="summary-label">Location</span><span class="summary-val">${location}${gym ? ' (' + gym + ')' : ''}</span></div>
+        <div class="summary-row"><span class="summary-label">TOTAL COST</span><span class="summary-val gold">${formatKES(total)}</span></div>
+      `;
+
+    } else {
+      planName = 'Daily Maintenance';
+      const totalDays = duration;
+      const totalTrainingDays = Math.round((trainingDaysPerWeek / 7) * totalDays);
+      const totalRestDays = totalDays - totalTrainingDays;
+
+      const trainingSachetPrice = getSachetPrice(wc.sachetG, wc.bonusProfit) + 5;
+      const restSachetPrice = getSachetPrice(3.0, 0);
+
+      const trainingSubtotal = round2(totalTrainingDays * trainingSachetPrice);
+      const restSubtotal = round2(totalRestDays * restSachetPrice);
+      originalTotal = round2(trainingSubtotal + restSubtotal);
+
+      if (isMilestoneOrder) {
+        total = round2(originalTotal * 0.70);
+        discountNote = '🎁 MILESTONE UNLOCKED: 30% OFF Loyalty Reward Applied!';
+      } else if (isMember) {
+        total = round2(originalTotal * 0.90);
+        discountNote = '👑 IRONCLAD MEMBER RATE: 10% OFF Applied!';
+      } else {
+        total = originalTotal;
+      }
+
+      summaryRowsHtml = `
+        <div class="summary-row"><span class="summary-label">Phone Number</span><span class="summary-val">${phone}</span></div>
+        <div class="summary-row"><span class="summary-label">Weight Class</span><span class="summary-val">Class ${wc.name} (${wc.label} - ${wc.sachetG}g)</span></div>
+        <div class="summary-row"><span class="summary-label">Phase / Duration</span><span class="summary-val">${planName} (${duration} Days)</span></div>
+        <div class="summary-row"><span class="summary-label">Training Days</span><span class="summary-val">${totalTrainingDays} Training Days</span></div>
+        <div class="summary-row"><span class="summary-label">Price / Training Sachet</span><span class="summary-val">${formatKES(trainingSachetPrice)}</span></div>
+        <div class="summary-row"><span class="summary-label">Training Subtotal</span><span class="summary-val">${formatKES(trainingSubtotal)}</span></div>
+        <div class="summary-row"><span class="summary-label">Price / Rest Sachet</span><span class="summary-val">${formatKES(restSachetPrice)}</span></div>
+        <div class="summary-row"><span class="summary-label">Rest Subtotal</span><span class="summary-val">${formatKES(restSubtotal)}</span></div>
+        <div class="summary-row"><span class="summary-label">Status Tier</span><span class="summary-val">${isMember ? '👑 Ironclad VIP' : 'Standard Tier'}</span></div>
+        <div class="summary-row"><span class="summary-label">Location</span><span class="summary-val">${location}${gym ? ' (' + gym + ')' : ''}</span></div>
+        <div class="summary-row"><span class="summary-label">TOTAL COST</span><span class="summary-val gold">${formatKES(total)}</span></div>
+      `;
+    }
+
+    // Membership benefits box (always show, but wording depends on membership)
+    const benefitsContainer = document.getElementById('membership-benefits-container');
+    const benefitsHtml = `
+      <div style="border-radius:12px; padding:0.9rem; background:rgba(255,255,255,0.02); border:1px solid var(--border-color);">
+        <strong style="display:block; margin-bottom:0.4rem;">${isMember ? 'You are an Ironclad Member — Your benefits' : 'Become an Ironclad Member — Benefits'}</strong>
+        <ul style="margin:0; padding-left:1.1rem; color:var(--text-secondary); font-size:0.9rem;">
+          <li>Permanent 10% discount on regular orders</li>
+          <li>Every 4th order: 30% milestone discount</li>
+          <li>Priority packaging and earlier delivery windows</li>
+          <li>Exclusive member-only rates, promos and updates via WhatsApp</li>
+        </ul>
+      </div>
+    `;
+    if (benefitsContainer) benefitsContainer.innerHTML = benefitsHtml;
+
+    document.getElementById('plan-title').textContent = `${planName.toUpperCase()} SUMMARY`;
+    document.getElementById('summary-rows').innerHTML = summaryRowsHtml;
+
+    const bannerBox = document.getElementById('discount-banner-container');
+    bannerBox.innerHTML = discountNote ? `<div class="discount-banner">${discountNote}</div>` : '';
+
+    const orderMsg = `Hello! I'd like to place an order.\nPhone: ${phone}\nPlan: ${planName}\nWeight Class: Class ${wc.name}\nTotal: ${formatKES(total)}\nLocation: ${location}, ${gym}`;
+    const waUrl = `https://wa.me/254115509593?text=${encodeURIComponent(orderMsg)}`;
+    const whatsappBtn = document.getElementById('whatsapp-btn');
+    whatsappBtn.href = waUrl;
+    whatsappBtn.setAttribute('aria-label', 'Open WhatsApp to place order');
+
+    // add a copy-to-clipboard helper
+    const copyBtnId = 'copy-order-btn';
+    let copyBtn = document.getElementById(copyBtnId);
+    if (!copyBtn) {
+      copyBtn = document.createElement('button');
+      copyBtn.id = copyBtnId;
+      copyBtn.className = 'btn-action';
+      copyBtn.style.marginTop = '0.5rem';
+      copyBtn.textContent = 'Copy Order Message';
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(orderMsg).then(() => alert('Order message copied to clipboard.'));
+      };
+      whatsappBtn.parentNode.insertBefore(copyBtn, whatsappBtn.nextSibling);
+    }
+
+    const resultBox = document.getElementById('result-box');
+    resultBox.classList.add('active');
+    setTimeout(() => resultBox.scrollIntoView({ behavior: 'smooth' }), 100);
+    // restore button
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'CALCULATE & CONFIRM PLAN';
+  }
 </script>
 </body>
 </html>
