@@ -10,6 +10,18 @@
 
 <!-- Supabase JS Client -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  setTimeout(() => {
+    if (typeof createClient !== 'function') {
+      const fallback = document.createElement('script');
+      fallback.src = 'https://unpkg.com/@supabase/supabase-js@2';
+      fallback.crossOrigin = 'anonymous';
+      fallback.onload = () => console.info('Supabase JS loaded from fallback CDN.');
+      fallback.onerror = () => console.error('Failed to load Supabase JS from both CDNs.');
+      document.head.appendChild(fallback);
+    }
+  }, 1200);
+</script>
 
 <!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -430,9 +442,31 @@
     .full-width { grid-column: span 1; }
     .hero-title { font-size: 2.4rem; }
   }
+
+  /* Debug banner */
+  #debug-banner {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    background: rgba(255,59,48,0.94);
+    color: #fff;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    font-weight: 700;
+    z-index: 9999;
+    max-width: 380px;
+    display: none;
+    white-space: pre-wrap;
+    font-size: 0.95rem;
+  }
+  #debug-banner.debug-info { background: rgba(6, 78, 59, 0.95); }
+  #debug-banner.debug-warn { background: rgba(255,159,10,0.95); color: #000; }
 </style>
 </head>
 <body>
+
+  <div id="debug-banner" role="status" aria-live="polite"></div>
 
 <header>
   <div class="container nav-wrapper">
@@ -616,8 +650,35 @@
   // 1. SUPABASE CLIENT CONFIGURATION
   const SUPABASE_URL = 'https://zhdpiscqxaowjrfidfis.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_AFavS_mQZhcxvwlAFx_B3g_k2MpkT8b';
-  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // Create Supabase client: use global createClient when available
+  const supabaseClient = (typeof createClient === 'function')
+    ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : (supabase && typeof supabase.createClient === 'function')
+      ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+      : null;
   const USING_SUPABASE = !SUPABASE_URL.includes('YOUR_SUPABASE') && !SUPABASE_ANON_KEY.includes('YOUR_');
+  const EDGE_ORDER_HANDLER_URL = 'https://zhdpiscqxaowjrfidfis.functions.supabase.co/order-handler';
+  const EDGE_ORDER_HANDLER_INVALID = EDGE_ORDER_HANDLER_URL.includes('<YOUR_EDGE_FUNCTION_HOST>');
+
+  // Debug helper to show errors/warnings in-page for faster troubleshooting
+  function showDebug(msg, level = 'error', ttl = 15000) {
+    try {
+      let el = document.getElementById('debug-banner');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'debug-banner';
+        document.body.appendChild(el);
+      }
+      el.textContent = String(msg);
+      el.className = '';
+      if (level === 'info') el.classList.add('debug-info');
+      else if (level === 'warn') el.classList.add('debug-warn');
+      el.style.display = 'block';
+      if (ttl > 0) setTimeout(() => { try { el.style.display = 'none'; } catch (e) {} }, ttl);
+    } catch (e) {
+      console.warn('showDebug failed', e);
+    }
+  }
 
   // 2. FORMULA PRICING CONSTANTS
   const TUB_COST = 3000;
@@ -684,11 +745,13 @@
 
       if (error) {
         console.error('Supabase query error:', error);
+        showDebug('Supabase query error: ' + (error.message || JSON.stringify(error)), 'warn');
         return 0;
       }
       return data ? data.completed_orders : 0;
     } catch (err) {
       console.error('Fetch failed:', err);
+      showDebug('Supabase fetch failed: ' + (err.message || String(err)), 'error');
       return 0;
     }
   }
@@ -728,11 +791,11 @@
     const titleLbl = document.getElementById('tracker-title');
 
     if (count >= 4) {
-      badge.textContent = 'Ironclad VIP';
+      badge.textContent = 'Ironclad Member';
       badge.className = 'badge badge-gold';
       fill.style.width = '100%';
       countLbl.textContent = `${count} Verified Orders`;
-      titleLbl.textContent = 'VIP Status Active';
+      titleLbl.textContent = 'Member Status Active';
     } else {
       const pct = (count / 4) * 100;
       badge.textContent = 'Standard Tier';
@@ -742,6 +805,105 @@
       titleLbl.textContent = 'Streak Progress';
     }
   }
+
+  // 3.a Insert order into Supabase (if configured)
+  async function createOrderInSupabase(order) {
+    if (EDGE_ORDER_HANDLER_INVALID) {
+      const message = 'Edge Function URL is not configured. Replace <YOUR_EDGE_FUNCTION_HOST> with your deployed host.';
+      showDebug(message, 'error');
+      return { error: message };
+    }
+
+    if (!order.client_order_id) order.client_order_id = generateUUID();
+
+    try {
+      const response = await fetch(EDGE_ORDER_HANDLER_URL, {
+        method: 'POST',
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'apikey': SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify(order),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = json?.error || response.statusText || 'Order handler request failed';
+        console.error('Order handler error:', message);
+        showDebug('Order handler error: ' + message, 'error');
+        return { error: message };
+      }
+      return { data: json.order || json };
+    } catch (err) {
+      console.error('Order handler request failed:', err);
+      showDebug('Order handler request failed: ' + (err.message || String(err)), 'error');
+      return { error: err };
+    }
+  }
+
+  // UUID v4 generator (small, dependency-free)
+  function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  // --- Local queue fallback (ensures orders are not lost) ---
+  const ORDER_QUEUE_KEY = 'pi_order_queue_v1';
+
+  function loadOrderQueue() {
+    try {
+      const raw = localStorage.getItem(ORDER_QUEUE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+
+  function saveOrderQueue(queue) {
+    try { localStorage.setItem(ORDER_QUEUE_KEY, JSON.stringify(queue)); } catch (e) { console.error('Failed saving order queue', e); }
+  }
+
+  function enqueueOrder(order) {
+    // ensure the order has a client_order_id for idempotency
+    if (!order.client_order_id) order.client_order_id = generateUUID();
+    const q = loadOrderQueue();
+    q.push({ order, attempts: 0, queued_at: new Date().toISOString() });
+    saveOrderQueue(q);
+  }
+
+  async function processOrderQueue() {
+    let q = loadOrderQueue();
+    if (!q.length) return;
+    console.info('Processing order queue, items:', q.length);
+    const remaining = [];
+    for (const item of q) {
+      try {
+        const res = await createOrderInSupabase(item.order);
+        if (res && !res.error) {
+          console.info('Queued order saved through Edge Function:', item.order.client_order_id);
+          continue;
+        }
+        item.attempts = (item.attempts || 0) + 1;
+        if (item.attempts < 5) {
+          remaining.push(item);
+        } else {
+          console.warn('Dropping order after repeated failed attempts:', item);
+          showDebug('Dropping order after repeated failed attempts for phone ' + item.order.phone_number, 'warn');
+        }
+      } catch (err) {
+        console.error('Queue item processing error:', err);
+        showDebug('Queue item processing error: ' + (err.message || String(err)), 'error');
+        item.attempts = (item.attempts || 0) + 1;
+        if (item.attempts < 5) remaining.push(item);
+      }
+    }
+    saveOrderQueue(remaining);
+  }
+
+  // Try to process queue on load and when returning online
+  window.addEventListener('load', () => setTimeout(processOrderQueue, 1200));
+  window.addEventListener('online', () => setTimeout(processOrderQueue, 500));
 
   // 4. CALCULATE PLAN & SHOW DETAILED SUMMARY
   async function calculatePlan() {
@@ -804,7 +966,7 @@
         <div class="summary-row"><span class="summary-label">Price per Sachet</span><span class="summary-val">${formatKES(sachetPrice)}</span></div>
         <div class="summary-row"><span class="summary-label">Total Sachets</span><span class="summary-val">${totalSachets} Sachets</span></div>
         <div class="summary-row"><span class="summary-label">Sachets Subtotal</span><span class="summary-val">${formatKES(sachetSubtotal)}</span></div>
-        <div class="summary-row"><span class="summary-label">Status Tier</span><span class="summary-val">${isMember ? '👑 Ironclad VIP' : 'Standard Tier'}</span></div>
+        <div class="summary-row"><span class="summary-label">Status Tier</span><span class="summary-val">${isMember ? '👑 Ironclad Member' : 'Standard Tier'}</span></div>
         <div class="summary-row"><span class="summary-label">Location</span><span class="summary-val">${location}${gym ? ' (' + gym + ')' : ''}</span></div>
         <div class="summary-row"><span class="summary-label">TOTAL COST</span><span class="summary-val gold">${formatKES(total)}</span></div>
       `;
@@ -841,7 +1003,7 @@
         <div class="summary-row"><span class="summary-label">Training Subtotal</span><span class="summary-val">${formatKES(trainingSubtotal)}</span></div>
         <div class="summary-row"><span class="summary-label">Price / Rest Sachet</span><span class="summary-val">${formatKES(restSachetPrice)}</span></div>
         <div class="summary-row"><span class="summary-label">Rest Subtotal</span><span class="summary-val">${formatKES(restSubtotal)}</span></div>
-        <div class="summary-row"><span class="summary-label">Status Tier</span><span class="summary-val">${isMember ? '👑 Ironclad VIP' : 'Standard Tier'}</span></div>
+        <div class="summary-row"><span class="summary-label">Status Tier</span><span class="summary-val">${isMember ? '👑 Ironclad Member' : 'Standard Tier'}</span></div>
         <div class="summary-row"><span class="summary-label">Location</span><span class="summary-val">${location}${gym ? ' (' + gym + ')' : ''}</span></div>
         <div class="summary-row"><span class="summary-label">TOTAL COST</span><span class="summary-val gold">${formatKES(total)}</span></div>
       `;
@@ -873,6 +1035,47 @@
     const whatsappBtn = document.getElementById('whatsapp-btn');
     whatsappBtn.href = waUrl;
     whatsappBtn.setAttribute('aria-label', 'Open WhatsApp to place order');
+
+    // Attach click handler that saves order to Supabase before opening WhatsApp
+    whatsappBtn.onclick = async function (e) {
+      e.preventDefault();
+      try {
+        whatsappBtn.style.pointerEvents = 'none';
+        whatsappBtn.textContent = 'Saving order...';
+        const orderPayload = {
+          phone_number: phone,
+          body_weight_kg: weight,
+          plan_name: planName,
+          weight_class: `Class ${wc.name}`,
+          weight_class_short: wc.name,
+          total_kes: total,
+          location: location,
+          gym: gym,
+          is_member: !!isMember,
+          message: orderMsg,
+          created_at: new Date().toISOString()
+        };
+        // always enqueue locally first to avoid losing the order
+        enqueueOrder(orderPayload);
+
+        // try an immediate send; queue processor will retry if this fails
+        const res = await createOrderInSupabase(orderPayload);
+        if (res && res.error) {
+          console.warn('Immediate save failed, will retry in background.');
+          showDebug('Immediate save failed: ' + (res.error.message || JSON.stringify(res.error)), 'warn');
+        } else {
+          // on immediate success, trigger queue processing to remove duplicates
+          setTimeout(processOrderQueue, 300);
+        }
+      } catch (err) {
+        console.error('Order save flow failed:', err);
+      } finally {
+        // open WhatsApp regardless of save outcome
+        window.open(waUrl, '_blank');
+        whatsappBtn.style.pointerEvents = '';
+        whatsappBtn.textContent = '📲 PAY & ORDER VIA WHATSAPP';
+      }
+    };
 
     // add a copy-to-clipboard helper
     const copyBtnId = 'copy-order-btn';
