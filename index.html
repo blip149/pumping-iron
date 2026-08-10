@@ -441,6 +441,36 @@
     .form-grid { grid-template-columns: 1fr; }
     .full-width { grid-column: span 1; }
     .hero-title { font-size: 2.4rem; }
+    .nav-wrapper { height: auto; gap: 0.75rem; padding: 0.9rem 0; }
+    .container { padding: 0 1rem; }
+    .tracker-card, .wizard-card, .info-card, .result-box {
+      padding: 1.5rem;
+    }
+    .details-section { padding: 3rem 0; }
+    .cards-grid { gap: 1rem; }
+  }
+
+  @media (max-width: 640px) {
+    body { font-size: 0.95rem; }
+    header { border-bottom: 1px solid var(--border-color); }
+    .hero { padding: 2.5rem 0 1.5rem; }
+    .hero-title { font-size: 2rem; line-height: 1.15; }
+    .hero-subtitle { font-size: 1rem; }
+    .nav-wrapper { flex-direction: column; align-items: stretch; }
+    .nav-btn { width: 100%; text-align: center; }
+    .tracker-header { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+    .input-group-row { flex-direction: column; }
+    .input-group-row .form-control,
+    .input-group-row .btn-action { width: 100%; }
+    .form-control { font-size: 0.95rem; padding: 0.85rem 1rem; }
+    .btn-action, .btn-submit, .btn-whatsapp { font-size: 1rem; padding: 0.95rem 1rem; }
+    .summary-row { flex-direction: column; align-items: flex-start; gap: 0.35rem; }
+    .summary-val { text-align: left; }
+    .discount-banner { font-size: 0.88rem; }
+    .result-box { margin-top: 1.5rem; }
+    .details-section { padding: 2rem 0; }
+    .info-card { padding: 1.3rem; }
+    #debug-banner { right: 0.75rem; left: 0.75rem; max-width: calc(100% - 1.5rem); }
   }
 
   /* Debug banner */
