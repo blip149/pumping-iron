@@ -1028,7 +1028,7 @@
 
       summaryRowsHtml = `
         <div class="summary-row"><span class="summary-label">Phone Number</span><span class="summary-val">${phone}</span></div>
-        <div class="summary-row"><span class="summary-label">Weight Class</span><span class="summary-val">Class ${wc.name} (${wc.label} - ${wc.sachetG}g)</span></div>
+        <div class="summary-row"><span class="summary-label">Weight Class</span><span class="summary-val">Class ${wc.name} (${wc.label}  , Dose -> ${wc.sachetG}g)</span></div>
         <div class="summary-row"><span class="summary-label">Phase / Plan</span><span class="summary-val">${planName}</span></div>
         <div class="summary-row"><span class="summary-label">Price per Sachet</span><span class="summary-val">${formatKES(sachetPrice)}</span></div>
         <div class="summary-row"><span class="summary-label">Total Sachets</span><span class="summary-val">${totalSachets} Sachets</span></div>
@@ -1063,7 +1063,7 @@
 
       summaryRowsHtml = `
         <div class="summary-row"><span class="summary-label">Phone Number</span><span class="summary-val">${phone}</span></div>
-        <div class="summary-row"><span class="summary-label">Weight Class</span><span class="summary-val">Class ${wc.name} (${wc.label} - ${wc.sachetG}g)</span></div>
+        <div class="summary-row"><span class="summary-label">Weight Class</span><span class="summary-val">Class ${wc.name} (${wc.label}   , Dose -> ${wc.sachetG}g)</span></div>
         <div class="summary-row"><span class="summary-label">Phase / Duration</span><span class="summary-val">${planName} (${duration} Days)</span></div>
         <div class="summary-row"><span class="summary-label">Training Days</span><span class="summary-val">${totalTrainingDays} Training Days</span></div>
         <div class="summary-row"><span class="summary-label">Price / Training Sachet</span><span class="summary-val">${formatKES(trainingSachetPrice)}</span></div>
