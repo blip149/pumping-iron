@@ -107,11 +107,12 @@
     justify-content: space-between;
     align-items: center;
     height: 72px;
+    gap: 1rem;
   }
 
   .logo {
     font-family: var(--font-heading);
-    font-size: 1.4rem;
+    font-size: 1.05rem;
     font-weight: 800;
     letter-spacing: -0.02em;
     color: var(--text-primary);
@@ -120,14 +121,35 @@
 
   .logo span { color: var(--primary); }
 
+  .nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+  }
+
+  .nav-link,
+  .nav-btn {
+    font-weight: 700;
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  .nav-link {
+    color: var(--text-primary);
+    padding: 0.55rem 0.9rem;
+    background: transparent;
+  }
+
+  .nav-link:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
   .nav-btn {
     background: var(--primary);
     color: #FFF;
-    font-weight: 700;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-sm);
-    text-decoration: none;
-    transition: background 0.2s ease;
+    padding: 0.55rem 1rem;
   }
 
   .nav-btn:hover { background: var(--primary-hover); }
@@ -456,7 +478,9 @@
     .hero { padding: 2.5rem 0 1.5rem; }
     .hero-title { font-size: 2rem; line-height: 1.15; }
     .hero-subtitle { font-size: 1rem; }
-    .nav-wrapper { flex-direction: column; align-items: stretch; }
+    .nav-wrapper { flex-direction: column; align-items: stretch; gap: 0.75rem; }
+    .nav-actions { width: 100%; display: flex; flex-direction: column; gap: 0.5rem; }
+    .nav-link,
     .nav-btn { width: 100%; text-align: center; }
     .tracker-header { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
     .input-group-row { flex-direction: column; }
@@ -501,7 +525,11 @@
 <header>
   <div class="container nav-wrapper">
     <a href="#" class="logo">PUMPING <span>IRON</span></a>
-    <a href="#calculator" class="nav-btn">Order Now</a>
+    <div class="nav-actions">
+      <a href="#calculator" class="nav-link">Order Now</a>
+      <a href="membership.html" class="nav-link">Membership</a>
+      <a href="#how-title" class="nav-btn">Learn More</a>
+    </div>
   </div>
 </header>
 
@@ -510,7 +538,7 @@
     <div>
       <span class="badge badge-gold">⚡ Loyalty Program Built for Lifters</span>
       <h1 class="hero-title">Order 4 Times consecutively.<br><span>Get Free Membership.</span></h1>
-      <p class="hero-subtitle">We deliver authentic USN Creatine Monohydrate pre-portioned to your precise body weight. Check your streak or place an order below.</p>
+      <p class="hero-subtitle">We source Creatine Monohydrate from trusted suppliers and deliver pre-portioned to your precise body weight. Check your streak or place an order below.</p>
       <div style="margin-top:1.5rem; display:flex; flex-wrap:wrap; gap:0.8rem;">
         <a href="membership.html" class="btn-action" style="text-decoration:none;">Learn More About Ironclad Membership</a>
       </div>
