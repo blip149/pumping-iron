@@ -567,7 +567,7 @@
         <input type="tel" id="verify-phone" class="form-control" placeholder="e.g. 0712345678" aria-label="M-Pesa phone for lookup" aria-describedby="verify-help">
         <button class="btn-action" id="verify-btn" onclick="lookupMemberPhone()">Verify</button>
       </div>
-      <div id="verify-help" style="font-size:0.82rem; color:var(--text-secondary); margin-top:0.5rem;">Enter your M-Pesa number (07XXXXXXXX or +2547XXXXXXXX). Click Verify to pull your streak.</div>
+      <div id="verify-help" style="font-size:0.82rem; color:var(--text-secondary); margin-top:0.5rem;">Enter your M-Pesa number (01XXXXXXXX, 07XXXXXXXX, or +2541/7XXXXXXXX). Click Verify to pull your streak.</div>
 
       <div class="progress-container">
         <div class="progress-label">
@@ -843,11 +843,11 @@
   function normalizePhone(raw) {
     if (!raw) return '';
     let p = raw.replace(/[^0-9+]/g, '');
-    // Convert local 07... to +2547...
+    // Convert local 07... or 01... to +254...
     if (p.startsWith('0') && p.length >= 9) p = '+254' + p.slice(1);
     if (p.startsWith('254') && !p.startsWith('+')) p = '+' + p;
-    // basic validation: must start with +2547 and be 13 characters
-    if (!/^\+2547\d{8}$/.test(p)) return '';
+    // basic validation: must start with +2547 or +2541 and be 13 characters
+    if (!/^\+254[17]\d{8}$/.test(p)) return '';
     return p;
   }
 
