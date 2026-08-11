@@ -8,7 +8,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
 
-const PHONE_REGEX = /^\+2547\d{8}$/;
+const PHONE_REGEX = /^\+254[17]\d{8}$/;
 
 function corsHeaders() {
   return {
@@ -39,7 +39,7 @@ async function validatePayload(payload: any) {
   }
 
   if (!PHONE_REGEX.test(payload.phone_number)) {
-    return "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX.";
+    return "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX.";
   }
 
   if (typeof payload.total_kes !== "number" && typeof payload.total_kes !== "string") {
