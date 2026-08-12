@@ -715,60 +715,89 @@
 </footer>
 
 <script>
-  // 1. SUPABASE CLIENT CONFIGURATION
+  // ============================================================
+  // 1. SUPABASE / EDGE FUNCTION CONFIGURATION
+  // ============================================================
   const SUPABASE_URL = 'https://zhdpiscqxaowjrfidfis.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_AFavS_mQZhcxvwlAFx_B3g_k2MpkT8b';
-  // Create Supabase client: use global createClient when available
+  const EDGE_ORDER_HANDLER_URL = 'https://zhdpiscqxaowjrfidfis.functions.supabase.co/order-handler';
+
   const supabaseClient = (typeof createClient === 'function')
     ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-    : (supabase && typeof supabase.createClient === 'function')
+    : (typeof supabase !== 'undefined' && typeof supabase.createClient === 'function')
       ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
-  const USING_SUPABASE = !SUPABASE_URL.includes('YOUR_SUPABASE') && !SUPABASE_ANON_KEY.includes('YOUR_');
-  const EDGE_ORDER_HANDLER_URL = 'https://zhdpiscqxaowjrfidfis.functions.supabase.co/order-handler';
-  const EDGE_ORDER_HANDLER_INVALID = EDGE_ORDER_HANDLER_URL.includes('<YOUR_EDGE_FUNCTION_HOST>');
 
-  // Debug helper to show errors/warnings in-page for faster troubleshooting
+  const USING_SUPABASE = !!supabaseClient;
+
+  // ============================================================
+  // 2. LOYALTY STATE — DISPLAY/ELIGIBILITY ONLY
+  //
+  // IMPORTANT:
+  // The frontend is NOT the financial authority.
+  //
+  // It may read membership state to explain loyalty status to
+  // the customer, but it must NEVER calculate or authorize a
+  // discount or final payable amount.
+  //
+  // The Edge Function will independently re-read memberships
+  // before calculating money.
+  // ============================================================
+  const IRONCLAD_TIER = 'ironclad_vip';
+  const MILESTONE_INTERVAL = 4;
+
+  // ============================================================
+  // 3. NON-FINANCIAL PRODUCT / DOSING DATA
+  //
+  // These values describe the requested plan. They are NOT used
+  // to calculate a price in the browser.
+  //
+  // The Edge Function will become the sole financial authority
+  // and will own the actual cost/pricing formula.
+  // ============================================================
+  const WEIGHT_CLASSES = [
+    { name: 'A', min: 30,  max: 50,  label: '30–50kg',  sachetG: 3.0 },
+    { name: 'B', min: 51,  max: 67,  label: '51–67kg',  sachetG: 4.5 },
+    { name: 'C', min: 68,  max: 80,  label: '68–80kg',  sachetG: 6.0 },
+    { name: 'D', min: 81,  max: 100, label: '81–100kg', sachetG: 7.5 },
+    { name: 'E', min: 101, max: 250, label: '101kg+',   sachetG: 9.0 },
+  ];
+
+  // ============================================================
+  // 4. UI / DEBUG HELPERS
+  // ============================================================
   function showDebug(msg, level = 'error', ttl = 15000) {
     try {
       let el = document.getElementById('debug-banner');
+
       if (!el) {
         el = document.createElement('div');
         el.id = 'debug-banner';
         document.body.appendChild(el);
       }
+
       el.textContent = String(msg);
       el.className = '';
-      if (level === 'info') el.classList.add('debug-info');
-      else if (level === 'warn') el.classList.add('debug-warn');
+
+      if (level === 'info') {
+        el.classList.add('debug-info');
+      } else if (level === 'warn') {
+        el.classList.add('debug-warn');
+      }
+
       el.style.display = 'block';
-      if (ttl > 0) setTimeout(() => { try { el.style.display = 'none'; } catch (e) {} }, ttl);
+
+      if (ttl > 0) {
+        setTimeout(() => {
+          try {
+            el.style.display = 'none';
+          } catch (_) {}
+        }, ttl);
+      }
     } catch (e) {
       console.warn('showDebug failed', e);
     }
   }
-
-  // 2. FORMULA PRICING CONSTANTS
-  const TUB_COST = 3000;
-  const TUB_GRAMS = 410;
-  const PPG = TUB_COST / TUB_GRAMS;
-
-  const MYLAR_SMALL = 1095 / 800;
-  const MYLAR_LARGE = 1095 / 400;
-  const BASE_PROFIT = 22;
-
-  const WEIGHT_CLASSES = [
-    { name: 'A', min: 30,  max: 50,  label: '30–50kg',  sachetG: 3.0, bonusProfit: 0 },
-    { name: 'B', min: 51,  max: 67,  label: '51–67kg',  sachetG: 4.5, bonusProfit: 2 },
-    { name: 'C', min: 68,  max: 80,  label: '68–80kg',  sachetG: 6.0, bonusProfit: 4 },
-    { name: 'D', min: 81,  max: 100, label: '81–100kg', sachetG: 7.5, bonusProfit: 6 },
-    { name: 'E', min: 101, max: 250, label: '101kg+',   sachetG: 9.0, bonusProfit: 8 },
-  ];
-
-  function getWeightClass(kg) { return WEIGHT_CLASSES.find(c => kg >= c.min && kg <= c.max); }
-  function round2(n) { return Math.round(n * 100) / 100; }
-  function getMylarCost(grams) { return grams <= 4.5 ? MYLAR_SMALL : MYLAR_LARGE; }
-  function getSachetCost(grams) { return round2((PPG * grams) + getMylarCost(grams)); }
 
   function formatKES(n) {
     try {
@@ -778,15 +807,291 @@
     }
   }
 
-  function getSachetPrice(grams, bonus = 0) {
-    const rawCost = getSachetCost(grams);
-    return Math.ceil(rawCost + BASE_PROFIT + bonus);
+  function getWeightClass(kg) {
+    return WEIGHT_CLASSES.find(c => kg >= c.min && kg <= c.max);
   }
 
+  function generateUUID() {
+    if (
+      typeof crypto !== 'undefined' &&
+      typeof crypto.randomUUID === 'function'
+    ) {
+      return crypto.randomUUID();
+    }
+
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
+      /[xy]/g,
+      function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x'
+          ? r
+          : (r & 0x3 | 0x8);
+
+        return v.toString(16);
+      }
+    );
+  }
+
+  // ============================================================
+  // 5. PHONE NORMALIZATION
+  // ============================================================
+  function normalizePhone(raw) {
+    if (!raw) return '';
+
+    let p = String(raw).replace(/[^0-9+]/g, '');
+
+    if (p.startsWith('0') && p.length === 10) {
+      p = '+254' + p.slice(1);
+    } else if (
+      p.startsWith('254') &&
+      !p.startsWith('+') &&
+      p.length === 12
+    ) {
+      p = '+' + p;
+    }
+
+    if (!/^\+254[17]\d{8}$/.test(p)) {
+      return '';
+    }
+
+    return p;
+  }
+
+  // ============================================================
+  // 6. MEMBERSHIP STATE — DATABASE IS AUTHORITATIVE
+  //
+  // This function is ONLY for displaying verified loyalty state.
+  // It does NOT authorize pricing.
+  //
+  // The Edge Function MUST independently repeat this lookup
+  // when the order is submitted.
+  // ============================================================
+  async function fetchMembership(phone) {
+    const cleanPhone = normalizePhone(phone);
+
+    if (!cleanPhone) {
+      throw new Error(
+        'Please enter a valid M-Pesa phone number.'
+      );
+    }
+
+    if (!USING_SUPABASE) {
+      throw new Error(
+        'Membership verification is temporarily unavailable.'
+      );
+    }
+
+    const { data, error } = await supabaseClient
+      .from('memberships')
+      .select(
+        'completed_orders, tier, last_order_date'
+      )
+      .eq('phone_number', cleanPhone)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(
+        'Unable to verify membership: ' +
+        error.message
+      );
+    }
+
+    // No membership row = lead/non-member.
+    // Never infer membership from attempted orders.
+    if (!data) {
+      return {
+        exists: false,
+        completedOrders: 0,
+        tier: 'lead',
+        isMember: false,
+        nextOrderNumber: 1,
+        isMilestone: false,
+        lastOrderDate: null,
+      };
+    }
+
+    const completedOrders =
+      Number(data.completed_orders);
+
+    if (
+      !Number.isInteger(completedOrders) ||
+      completedOrders < 0
+    ) {
+      throw new Error(
+        'Invalid membership order count returned by the database.'
+      );
+    }
+
+    const tier =
+      String(data.tier || 'lead');
+
+    const isMember =
+      tier === IRONCLAD_TIER;
+
+    // ----------------------------------------------------------
+    // Database consistency guard.
+    //
+    // Your business rule says four completed orders establish
+    // Ironclad VIP. If the two authoritative columns disagree,
+    // do NOT make a pricing decision in the browser.
+    // ----------------------------------------------------------
+    if (
+      completedOrders >= 4 &&
+      !isMember
+    ) {
+      throw new Error(
+        'Membership data is inconsistent: 4+ completed orders but Ironclad VIP is not active. Please contact support.'
+      );
+    }
+
+    if (
+      isMember &&
+      completedOrders < 4
+    ) {
+      throw new Error(
+        'Membership data is inconsistent: Ironclad VIP is active before 4 completed orders.'
+      );
+    }
+
+    const nextOrderNumber =
+      completedOrders + 1;
+
+    // ----------------------------------------------------------
+    // IMPORTANT BUSINESS RULE:
+    //
+    // A milestone can ONLY happen while the customer is already
+    // VIP. Therefore order #4 itself does NOT receive the
+    // milestone discount.
+    //
+    // Example:
+    // completed_orders = 3 -> next order #4 -> NOT milestone
+    // completed_orders = 4 -> VIP
+    // completed_orders = 7 -> next order #8 -> milestone
+    // ----------------------------------------------------------
+    const isMilestone =
+      isMember &&
+      nextOrderNumber % MILESTONE_INTERVAL === 0;
+
+    return {
+      exists: true,
+      completedOrders,
+      tier,
+      isMember,
+      nextOrderNumber,
+      isMilestone,
+      lastOrderDate:
+        data.last_order_date || null,
+    };
+  }
+
+  async function lookupMemberPhone() {
+    const btn =
+      document.getElementById('verify-btn');
+
+    const phoneInput =
+      document.getElementById('verify-phone');
+
+    const phone =
+      normalizePhone(phoneInput.value);
+
+    if (!phone) {
+      alert(
+        'Please enter a valid M-Pesa phone number.'
+      );
+      phoneInput.focus();
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML =
+      'Checking <span class="spinner" aria-hidden="true"></span>';
+
+    document.getElementById('phone').value =
+      phone;
+
+    try {
+      await updateTrackerUI(phone);
+    } catch (err) {
+      showDebug(
+        err?.message || String(err),
+        'error'
+      );
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Verify';
+    }
+  }
+
+  async function updateTrackerUI(phone) {
+    const membership =
+      await fetchMembership(phone);
+
+    const count =
+      membership.completedOrders;
+
+    const badge =
+      document.getElementById('tracker-badge');
+
+    const fill =
+      document.getElementById('tracker-progress');
+
+    const countLbl =
+      document.getElementById('tracker-count');
+
+    const titleLbl =
+      document.getElementById('tracker-title');
+
+    if (membership.isMember) {
+      badge.textContent =
+        'Ironclad Member';
+
+      badge.className =
+        'badge badge-gold';
+
+      fill.style.width = '100%';
+
+      countLbl.textContent =
+        `${count} Verified Orders`;
+
+      titleLbl.textContent =
+        'Member Status Active';
+    } else {
+      const progressCount =
+        Math.min(count, MILESTONE_INTERVAL);
+
+      const pct =
+        (progressCount / MILESTONE_INTERVAL) * 100;
+
+      badge.textContent =
+        'Standard Tier';
+
+      badge.className =
+        'badge badge-red';
+
+      fill.style.width =
+        `${pct}%`;
+
+      countLbl.textContent =
+        `${count} Verified Orders`;
+
+      titleLbl.textContent =
+        'Loyalty Progress';
+    }
+  }
+
+  // ============================================================
+  // 7. GOAL UI
+  // ============================================================
   function toggleGoalFields() {
-    const goal = document.getElementById('goal').value;
-    const durGroup = document.getElementById('duration-group');
-    const trainGroup = document.getElementById('training-group');
+    const goal =
+      document.getElementById('goal').value;
+
+    const durGroup =
+      document.getElementById('duration-group');
+
+    const trainGroup =
+      document.getElementById('training-group');
+
     if (goal === 'maintenance') {
       durGroup.style.display = 'block';
       trainGroup.style.display = 'block';
@@ -796,376 +1101,1133 @@
     }
   }
 
-  // 3. FETCH STREAK FROM SUPABASE DB
-  async function fetchStreakFromSupabase(phone) {
-    if (!phone) return 0;
-    const cleanPhone = phone.trim().replace(/\s+/g, '');
-    if (!USING_SUPABASE) {
-      console.warn('Supabase not configured; returning 0 for streak lookup.');
-      return 0;
-    }
-    try {
-      const { data, error } = await supabaseClient
-        .from('memberships')
-        .select('completed_orders')
-        .eq('phone_number', cleanPhone)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Supabase query error:', error);
-        showDebug('Supabase query error: ' + (error.message || JSON.stringify(error)), 'warn');
-        return 0;
-      }
-      return data ? data.completed_orders : 0;
-    } catch (err) {
-      console.error('Fetch failed:', err);
-      showDebug('Supabase fetch failed: ' + (err.message || String(err)), 'error');
-      return 0;
-    }
-  }
-
-  async function lookupMemberPhone() {
-    const btn = document.getElementById('verify-btn');
-    const phoneInput = document.getElementById('verify-phone');
-    let phone = phoneInput.value.trim();
-    phone = normalizePhone(phone);
-    if (!phone) { alert('Please enter a valid M-Pesa phone number.'); phoneInput.focus(); return; }
-    btn.disabled = true; btn.innerHTML = 'Checking <span class="spinner" aria-hidden="true"></span>';
-    document.getElementById('phone').value = phone;
-    try {
-      await updateTrackerUI(phone);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Verify';
-    }
-  }
-
-  function normalizePhone(raw) {
-    if (!raw) return '';
-    let p = raw.replace(/[^0-9+]/g, '');
-    // Convert local 07... or 01... to +254...
-    if (p.startsWith('0') && p.length >= 9) p = '+254' + p.slice(1);
-    if (p.startsWith('254') && !p.startsWith('+')) p = '+' + p;
-    // basic validation: must start with +2547 or +2541 and be 13 characters
-    if (!/^\+254[17]\d{8}$/.test(p)) return '';
-    return p;
-  }
-
-  async function updateTrackerUI(phone) {
-    const count = await fetchStreakFromSupabase(phone);
-    const badge = document.getElementById('tracker-badge');
-    const fill = document.getElementById('tracker-progress');
-    const countLbl = document.getElementById('tracker-count');
-    const titleLbl = document.getElementById('tracker-title');
-
-    if (count >= 4) {
-      badge.textContent = 'Ironclad Member';
-      badge.className = 'badge badge-gold';
-      fill.style.width = '100%';
-      countLbl.textContent = `${count} Verified Orders`;
-      titleLbl.textContent = 'Member Status Active';
-    } else {
-      const pct = (count / 4) * 100;
-      badge.textContent = 'Standard Tier';
-      badge.className = 'badge badge-red';
-      fill.style.width = `${pct}%`;
-      countLbl.textContent = `${count} / 4 Orders`;
-      titleLbl.textContent = 'Streak Progress';
-    }
-  }
-
-  // 3.a Insert order into Supabase (if configured)
+  // ============================================================
+  // 8. EDGE FUNCTION ORDER CREATION
+  //
+  // IMPORTANT:
+  // There is intentionally NO total_kes here.
+  // There is intentionally NO is_member here.
+  // There is intentionally NO discount amount here.
+  // There is intentionally NO discount type here.
+  //
+  // The browser sends ORDER INPUTS only.
+  // The Edge Function will calculate all money.
+  // ============================================================
   async function createOrderInSupabase(order) {
-    if (EDGE_ORDER_HANDLER_INVALID) {
-      const message = 'Edge Function URL is not configured. Replace <YOUR_EDGE_FUNCTION_HOST> with your deployed host.';
-      showDebug(message, 'error');
-      return { error: message };
+    if (!order?.client_order_id) {
+      order.client_order_id = generateUUID();
     }
-
-    if (!order.client_order_id) order.client_order_id = generateUUID();
 
     try {
-      const response = await fetch(EDGE_ORDER_HANDLER_URL, {
-        method: 'POST',
-        mode: 'cors',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'apikey': SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify(order),
-      });
-      const json = await response.json().catch(() => null);
+      const response =
+        await fetch(
+          EDGE_ORDER_HANDLER_URL,
+          {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+              'Content-Type':
+                'application/json',
+              'Authorization':
+                `Bearer ${SUPABASE_ANON_KEY}`,
+              'apikey':
+                SUPABASE_ANON_KEY,
+            },
+            body:
+              JSON.stringify(order),
+          }
+        );
+
+      const json =
+        await response.json()
+          .catch(() => null);
+
       if (!response.ok) {
-        const message = json?.error || response.statusText || 'Order handler request failed';
-        console.error('Order handler error:', message);
-        showDebug('Order handler error: ' + message, 'error');
-        return { error: message };
+        const message =
+          json?.error ||
+          response.statusText ||
+          'Order handler request failed';
+
+        console.error(
+          'Order handler error:',
+          message
+        );
+
+        return {
+          error: message,
+          status: response.status,
+        };
       }
-      return { data: json.order || json };
+
+      return {
+        data:
+          json?.order || json,
+
+        pricing:
+          json?.pricing || null,
+
+        membership:
+          json?.membership || null,
+
+        status:
+          json?.status || null,
+      };
     } catch (err) {
-      console.error('Order handler request failed:', err);
-      showDebug('Order handler request failed: ' + (err.message || String(err)), 'error');
-      return { error: err };
+      console.error(
+        'Order handler request failed:',
+        err
+      );
+
+      return {
+        error:
+          err?.message ||
+          String(err),
+      };
     }
   }
 
-  // UUID v4 generator (small, dependency-free)
-  function generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
-  }
+  // ============================================================
+  // 9. LOCAL QUEUE
+  //
+  // Queue stores ORDER INPUTS only.
+  // It does not store an authoritative price.
+  //
+  // A queued order is NOT treated as paid or confirmed.
+  // ============================================================
+  const ORDER_QUEUE_KEY =
+    'pi_order_queue_v3';
 
-  // --- Local queue fallback (ensures orders are not lost) ---
-  const ORDER_QUEUE_KEY = 'pi_order_queue_v1';
+  let queueProcessing = false;
 
   function loadOrderQueue() {
     try {
-      const raw = localStorage.getItem(ORDER_QUEUE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch (e) { return []; }
+      const raw =
+        localStorage.getItem(
+          ORDER_QUEUE_KEY
+        );
+
+      const parsed =
+        raw ? JSON.parse(raw) : [];
+
+      return Array.isArray(parsed)
+        ? parsed
+        : [];
+    } catch (e) {
+      console.error(
+        'Failed loading order queue:',
+        e
+      );
+
+      return [];
+    }
   }
 
   function saveOrderQueue(queue) {
-    try { localStorage.setItem(ORDER_QUEUE_KEY, JSON.stringify(queue)); } catch (e) { console.error('Failed saving order queue', e); }
-  }
-
-  function enqueueOrder(order) {
-    // ensure the order has a client_order_id for idempotency
-    if (!order.client_order_id) order.client_order_id = generateUUID();
-    const q = loadOrderQueue();
-    q.push({ order, attempts: 0, queued_at: new Date().toISOString() });
-    saveOrderQueue(q);
-  }
-
-  async function processOrderQueue() {
-    let q = loadOrderQueue();
-    if (!q.length) return;
-    console.info('Processing order queue, items:', q.length);
-    const remaining = [];
-    for (const item of q) {
-      try {
-        const res = await createOrderInSupabase(item.order);
-        if (res && !res.error) {
-          console.info('Queued order saved through Edge Function:', item.order.client_order_id);
-          continue;
-        }
-        item.attempts = (item.attempts || 0) + 1;
-        if (item.attempts < 5) {
-          remaining.push(item);
-        } else {
-          console.warn('Dropping order after repeated failed attempts:', item);
-          showDebug('Dropping order after repeated failed attempts for phone ' + item.order.phone_number, 'warn');
-        }
-      } catch (err) {
-        console.error('Queue item processing error:', err);
-        showDebug('Queue item processing error: ' + (err.message || String(err)), 'error');
-        item.attempts = (item.attempts || 0) + 1;
-        if (item.attempts < 5) remaining.push(item);
-      }
+    try {
+      localStorage.setItem(
+        ORDER_QUEUE_KEY,
+        JSON.stringify(queue)
+      );
+    } catch (e) {
+      console.error(
+        'Failed saving order queue:',
+        e
+      );
     }
+  }
+
+  function removeQueuedOrder(
+    clientOrderId
+  ) {
+    if (!clientOrderId) return;
+
+    const queue =
+      loadOrderQueue();
+
+    const remaining =
+      queue.filter(
+        item =>
+          item?.order?.client_order_id !==
+          clientOrderId
+      );
+
     saveOrderQueue(remaining);
   }
 
-  // Try to process queue on load and when returning online
-  window.addEventListener('load', () => setTimeout(processOrderQueue, 1200));
-  window.addEventListener('online', () => setTimeout(processOrderQueue, 500));
+  function enqueueOrder(order) {
+    if (
+      !order?.client_order_id
+    ) {
+      throw new Error(
+        'Cannot queue an order without client_order_id.'
+      );
+    }
 
-  // 4. CALCULATE PLAN & SHOW DETAILED SUMMARY
-  async function calculatePlan() {
-    const submitBtn = document.querySelector('.btn-submit');
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = 'Calculating <span class="spinner" aria-hidden="true"></span>';
+    const queue =
+      loadOrderQueue();
 
-    // normalize phone if possible
-    let phone = document.getElementById('phone').value.trim();
-    const normalized = normalizePhone(phone);
-    if (normalized) phone = normalized;
-    const weight = parseFloat(document.getElementById('weight').value);
-    const goal = document.getElementById('goal').value;
-    const duration = parseInt(document.getElementById('duration').value);
-    const trainingDaysPerWeek = parseInt(document.getElementById('trainingDays')?.value || '4');
-    const location = document.getElementById('location').value.trim();
-    const gym = document.getElementById('gym').value.trim();
-
-    if (!phone || phone.length < 9) { alert('Please enter your M-Pesa phone number.'); return; }
-    if (!weight || weight < 30 || weight > 250) { alert('Please enter a valid weight.'); return; }
-    if (!goal) { alert('Please select your goal.'); return; }
-    if (goal !== "loading" && !duration) { alert('Please select duration.'); return; }
-    if (!location) { alert('Please enter your location.'); return; }
-
-    const wc = getWeightClass(weight);
-    if (!wc) {
-      alert('Please enter a supported weight between 30 and 250 kg.');
+    if (
+      queue.some(
+        item =>
+          item?.order?.client_order_id ===
+          order.client_order_id
+      )
+    ) {
       return;
     }
-    const currentOrders = await fetchStreakFromSupabase(phone);
-    const targetOrderNumber = currentOrders + 1;
-    
-    const isMember = targetOrderNumber >= 4;
-    const isMilestoneOrder = targetOrderNumber % 4 === 0;
 
-    let planName = '', total = 0, originalTotal = 0, discountNote = '';
-    let summaryRowsHtml = '';
+    queue.push({
+      order,
+      attempts: 0,
+      queued_at:
+        new Date().toISOString(),
+    });
 
-    if (goal === 'loading') {
-      planName = 'Fast Saturation (5 Days)';
-      const totalSachets = 20;
-      const sachetPrice = getSachetPrice(wc.sachetG, wc.bonusProfit);
-      const sachetSubtotal = round2(sachetPrice * totalSachets);
-      originalTotal = sachetSubtotal;
+    saveOrderQueue(queue);
+  }
 
-      if (isMilestoneOrder) {
-        total = round2(originalTotal * 0.70);
-        discountNote = '🎁 MILESTONE UNLOCKED: 30% OFF Loyalty Reward Applied!';
-      } else if (isMember) {
-        total = round2(originalTotal * 0.90);
-        discountNote = '👑 IRONCLAD MEMBER RATE: 10% OFF Applied!';
-      } else {
-        total = originalTotal;
-      }
-
-      summaryRowsHtml = `
-        <div class="summary-row"><span class="summary-label">Phone Number</span><span class="summary-val">${phone}</span></div>
-        <div class="summary-row"><span class="summary-label">Weight Class</span><span class="summary-val">Class ${wc.name} (${wc.label}  , Dose -> ${wc.sachetG}g)</span></div>
-        <div class="summary-row"><span class="summary-label">Phase / Plan</span><span class="summary-val">${planName}</span></div>
-        <div class="summary-row"><span class="summary-label">Price per Sachet</span><span class="summary-val">${formatKES(sachetPrice)}</span></div>
-        <div class="summary-row"><span class="summary-label">Total Sachets</span><span class="summary-val">${totalSachets} Sachets</span></div>
-        <div class="summary-row"><span class="summary-label">Sachets Subtotal</span><span class="summary-val">${formatKES(sachetSubtotal)}</span></div>
-        <div class="summary-row"><span class="summary-label">Status Tier</span><span class="summary-val">${isMember ? '👑 Ironclad Member' : 'Standard Tier'}</span></div>
-        <div class="summary-row"><span class="summary-label">Location</span><span class="summary-val">${location}${gym ? ' (' + gym + ')' : ''}</span></div>
-        <div class="summary-row"><span class="summary-label">TOTAL COST</span><span class="summary-val gold">${formatKES(total)}</span></div>
-      `;
-
-    } else {
-      planName = 'Daily Maintenance';
-      const totalDays = duration;
-      const totalTrainingDays = Math.round((trainingDaysPerWeek / 7) * totalDays);
-      const totalRestDays = totalDays - totalTrainingDays;
-
-      const trainingSachetPrice = getSachetPrice(wc.sachetG, wc.bonusProfit) + 5;
-      const restSachetPrice = getSachetPrice(3.0, 0);
-
-      const trainingSubtotal = round2(totalTrainingDays * trainingSachetPrice);
-      const restSubtotal = round2(totalRestDays * restSachetPrice);
-      originalTotal = round2(trainingSubtotal + restSubtotal);
-
-      if (isMilestoneOrder) {
-        total = round2(originalTotal * 0.70);
-        discountNote = '🎁 MILESTONE UNLOCKED: 30% OFF Loyalty Reward Applied!';
-      } else if (isMember) {
-        total = round2(originalTotal * 0.90);
-        discountNote = '👑 IRONCLAD MEMBER RATE: 10% OFF Applied!';
-      } else {
-        total = originalTotal;
-      }
-
-      summaryRowsHtml = `
-        <div class="summary-row"><span class="summary-label">Phone Number</span><span class="summary-val">${phone}</span></div>
-        <div class="summary-row"><span class="summary-label">Weight Class</span><span class="summary-val">Class ${wc.name} (${wc.label}   , Dose -> ${wc.sachetG}g)</span></div>
-        <div class="summary-row"><span class="summary-label">Phase / Duration</span><span class="summary-val">${planName} (${duration} Days)</span></div>
-        <div class="summary-row"><span class="summary-label">Training Days</span><span class="summary-val">${totalTrainingDays} Training Days</span></div>
-        <div class="summary-row"><span class="summary-label">Price / Training Sachet</span><span class="summary-val">${formatKES(trainingSachetPrice)}</span></div>
-        <div class="summary-row"><span class="summary-label">Training Subtotal</span><span class="summary-val">${formatKES(trainingSubtotal)}</span></div>
-        <div class="summary-row"><span class="summary-label">Price / Rest Sachet</span><span class="summary-val">${formatKES(restSachetPrice)}</span></div>
-        <div class="summary-row"><span class="summary-label">Rest Subtotal</span><span class="summary-val">${formatKES(restSubtotal)}</span></div>
-        <div class="summary-row"><span class="summary-label">Status Tier</span><span class="summary-val">${isMember ? '👑 Ironclad Member' : 'Standard Tier'}</span></div>
-        <div class="summary-row"><span class="summary-label">Location</span><span class="summary-val">${location}${gym ? ' (' + gym + ')' : ''}</span></div>
-        <div class="summary-row"><span class="summary-label">TOTAL COST</span><span class="summary-val gold">${formatKES(total)}</span></div>
-      `;
+  async function processOrderQueue() {
+    if (queueProcessing) {
+      return;
     }
 
-    // Membership benefits box (always show, but wording depends on membership)
-    const benefitsContainer = document.getElementById('membership-benefits-container');
-    const benefitsHtml = `
-      <div style="border-radius:12px; padding:0.9rem; background:rgba(255,255,255,0.02); border:1px solid var(--border-color);">
-        <strong style="display:block; margin-bottom:0.4rem;">${isMember ? 'You are an Ironclad Member — Your benefits' : 'Become an Ironclad Member — Benefits'}</strong>
-        <ul style="margin:0; padding-left:1.1rem; color:var(--text-secondary); font-size:0.9rem;">
-          <li>Permanent 10% discount on regular orders</li>
-          <li>Every 4th order: 30% milestone discount</li>
-          <li>Priority packaging and earlier delivery windows</li>
-          <li>Exclusive member-only rates, promos and updates via WhatsApp</li>
-        </ul>
-      </div>
-    `;
-    if (benefitsContainer) benefitsContainer.innerHTML = benefitsHtml;
+    queueProcessing = true;
 
-    document.getElementById('plan-title').textContent = `${planName.toUpperCase()} SUMMARY`;
-    document.getElementById('summary-rows').innerHTML = summaryRowsHtml;
+    try {
+      const queue =
+        loadOrderQueue();
 
-    const bannerBox = document.getElementById('discount-banner-container');
-    bannerBox.innerHTML = discountNote ? `<div class="discount-banner">${discountNote}</div>` : '';
+      if (!queue.length) {
+        return;
+      }
 
-    const orderMsg = `Hello! I'd like to place an order.\nPhone: ${phone}\nPlan: ${planName}\nWeight Class: Class ${wc.name}\nTotal: ${formatKES(total)}\nLocation: ${location}, ${gym}`;
-    const waUrl = `https://wa.me/254115509593?text=${encodeURIComponent(orderMsg)}`;
-    const whatsappBtn = document.getElementById('whatsapp-btn');
-    whatsappBtn.href = waUrl;
-    whatsappBtn.setAttribute('aria-label', 'Open WhatsApp to place order');
+      const remaining = [];
 
-    // Attach click handler that saves order to Supabase before opening WhatsApp
-    whatsappBtn.onclick = async function (e) {
-      e.preventDefault();
-      try {
-        whatsappBtn.style.pointerEvents = 'none';
-        whatsappBtn.textContent = 'Saving order...';
-        const orderPayload = {
-          phone_number: phone,
-          body_weight_kg: weight,
-          plan_name: planName,
-          weight_class: `Class ${wc.name}`,
-          weight_class_short: wc.name,
-          total_kes: total,
-          location: location,
-          gym: gym,
-          is_member: !!isMember,
-          message: orderMsg,
-          created_at: new Date().toISOString()
-        };
-        // always enqueue locally first to avoid losing the order
-        enqueueOrder(orderPayload);
-
-        // try an immediate send; queue processor will retry if this fails
-        const res = await createOrderInSupabase(orderPayload);
-        if (res && res.error) {
-          console.warn('Immediate save failed, will retry in background.');
-          showDebug('Immediate save failed: ' + (res.error.message || JSON.stringify(res.error)), 'warn');
-        } else {
-          // on immediate success, trigger queue processing to remove duplicates
-          setTimeout(processOrderQueue, 300);
+      for (const item of queue) {
+        if (
+          !item?.order?.client_order_id
+        ) {
+          continue;
         }
-      } catch (err) {
-        console.error('Order save flow failed:', err);
-      } finally {
-        // open WhatsApp regardless of save outcome
-        window.open(waUrl, '_blank');
-        whatsappBtn.style.pointerEvents = '';
-        whatsappBtn.textContent = '📲 PAY & ORDER VIA WHATSAPP';
-      }
-    };
 
-    // add a copy-to-clipboard helper
-    const copyBtnId = 'copy-order-btn';
-    let copyBtn = document.getElementById(copyBtnId);
-    if (!copyBtn) {
-      copyBtn = document.createElement('button');
-      copyBtn.id = copyBtnId;
-      copyBtn.className = 'btn-action';
-      copyBtn.style.marginTop = '0.5rem';
-      copyBtn.textContent = 'Copy Order Message';
-      copyBtn.onclick = () => {
-        navigator.clipboard.writeText(orderMsg).then(() => alert('Order message copied to clipboard.'));
-      };
-      whatsappBtn.parentNode.insertBefore(copyBtn, whatsappBtn.nextSibling);
+        try {
+          const res =
+            await createOrderInSupabase(
+              item.order
+            );
+
+          if (
+            res &&
+            !res.error
+          ) {
+            // Server has accepted the order.
+            // Remove only this exact id.
+            continue;
+          }
+
+          item.attempts =
+            (item.attempts || 0) + 1;
+
+          // Never silently delete an order intent.
+          remaining.push(item);
+        } catch (err) {
+          console.error(
+            'Queue item processing error:',
+            err
+          );
+
+          item.attempts =
+            (item.attempts || 0) + 1;
+
+          remaining.push(item);
+        }
+      }
+
+      saveOrderQueue(
+        remaining
+      );
+    } finally {
+      queueProcessing = false;
+    }
+  }
+
+  window.addEventListener(
+    'load',
+    () => {
+      setTimeout(
+        processOrderQueue,
+        1200
+      );
+    }
+  );
+
+  window.addEventListener(
+    'online',
+    () => {
+      setTimeout(
+        processOrderQueue,
+        500
+      );
+    }
+  );
+
+  // ============================================================
+  // 10. SERVER-RETURNED PRICE EXTRACTION
+  //
+  // This is deliberately the ONLY place the frontend accepts
+  // a payable amount.
+  //
+  // The browser never derives it.
+  // ============================================================
+  function getServerPricing(
+    pricing
+  ) {
+    if (
+      !pricing ||
+      typeof pricing !== 'object'
+    ) {
+      return null;
     }
 
-    const resultBox = document.getElementById('result-box');
-    resultBox.classList.add('active');
-    setTimeout(() => resultBox.scrollIntoView({ behavior: 'smooth' }), 100);
-    // restore button
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'CALCULATE & CONFIRM PLAN';
+    const net =
+      Number(
+        pricing.net_amount ??
+        pricing.calculated_net_kes ??
+        pricing.total_kes
+      );
+
+    const gross =
+      Number(
+        pricing.gross_amount ??
+        pricing.original_total_kes
+      );
+
+    const discount =
+      Number(
+        pricing.discount_amount ?? 0
+      );
+
+    if (
+      !Number.isFinite(net) ||
+      net < 0
+    ) {
+      return null;
+    }
+
+    return {
+      net,
+      gross:
+        Number.isFinite(gross) &&
+        gross >= 0
+          ? gross
+          : null,
+
+      discount:
+        Number.isFinite(discount) &&
+        discount >= 0
+          ? discount
+          : 0,
+
+      discountApplied:
+        String(
+          pricing.discount_applied ||
+          'NONE'
+        ),
+    };
+  }
+
+  // ============================================================
+  // 11. CALCULATE PLAN
+  //
+  // This function calculates DOSING / QUANTITIES only.
+  //
+  // It does NOT calculate:
+  //   - price
+  //   - gross amount
+  //   - discount
+  //   - net amount
+  //   - financial eligibility
+  //
+  // Those belong to the Edge Function.
+  // ============================================================
+  async function calculatePlan() {
+    const submitBtn =
+      document.querySelector(
+        '.btn-submit'
+      );
+
+    submitBtn.disabled = true;
+
+    submitBtn.innerHTML =
+      'Preparing <span class="spinner" aria-hidden="true"></span>';
+
+    try {
+      const phoneInput =
+        document.getElementById(
+          'phone'
+        ).value.trim();
+
+      const phone =
+        normalizePhone(
+          phoneInput
+        );
+
+      const weight =
+        parseFloat(
+          document.getElementById(
+            'weight'
+          ).value
+        );
+
+      const goal =
+        document.getElementById(
+          'goal'
+        ).value;
+
+      const duration =
+        parseInt(
+          document.getElementById(
+            'duration'
+          ).value,
+          10
+        );
+
+      const trainingDaysPerWeek =
+        parseInt(
+          document.getElementById(
+            'trainingDays'
+          )?.value || '4',
+          10
+        );
+
+      const location =
+        document.getElementById(
+          'location'
+        ).value.trim();
+
+      const gym =
+        document.getElementById(
+          'gym'
+        ).value.trim();
+
+      if (!phone) {
+        alert(
+          'Please enter a valid M-Pesa phone number.'
+        );
+
+        document.getElementById(
+          'phone'
+        ).focus();
+
+        return;
+      }
+
+      if (
+        !Number.isFinite(weight) ||
+        weight < 30 ||
+        weight > 250
+      ) {
+        alert(
+          'Please enter a valid weight.'
+        );
+
+        return;
+      }
+
+      if (!goal) {
+        alert(
+          'Please select your goal.'
+        );
+
+        return;
+      }
+
+      if (
+        goal === 'maintenance'
+      ) {
+        if (
+          ![7, 14, 21, 30]
+            .includes(duration)
+        ) {
+          alert(
+            'Please select a valid maintenance duration.'
+          );
+
+          return;
+        }
+
+        if (
+          !Number.isInteger(
+            trainingDaysPerWeek
+          ) ||
+          trainingDaysPerWeek < 1 ||
+          trainingDaysPerWeek > 7
+        ) {
+          alert(
+            'Please select valid training days.'
+          );
+
+          return;
+        }
+      }
+
+      if (!location) {
+        alert(
+          'Please enter your location.'
+        );
+
+        return;
+      }
+
+      const wc =
+        getWeightClass(
+          weight
+        );
+
+      if (!wc) {
+        alert(
+          'Please enter a supported weight between 30 and 250 kg.'
+        );
+
+        return;
+      }
+
+      // --------------------------------------------------------
+      // DATABASE STATE FOR DISPLAY ONLY
+      // --------------------------------------------------------
+      const membership =
+        await fetchMembership(
+          phone
+        );
+
+      const completedOrders =
+        membership.completedOrders;
+
+      const nextOrderNumber =
+        membership.nextOrderNumber;
+
+      const isMember =
+        membership.isMember;
+
+      const isMilestoneOrder =
+        membership.isMilestone;
+
+      // --------------------------------------------------------
+      // NON-FINANCIAL PLAN INPUTS
+      // --------------------------------------------------------
+      let planName = '';
+      let planType = '';
+      let totalSachets = 0;
+      let totalTrainingDays = 0;
+      let totalRestDays = 0;
+
+      if (
+        goal === 'loading'
+      ) {
+        planName =
+          'Fast Saturation (5 Days)';
+
+        planType =
+          'fast_saturation';
+
+        totalSachets = 20;
+      } else {
+        planName =
+          'Daily Maintenance';
+
+        planType =
+          'daily_maintenance';
+
+        totalTrainingDays =
+          Math.round(
+            (trainingDaysPerWeek / 7) *
+            duration
+          );
+
+        totalRestDays =
+          duration -
+          totalTrainingDays;
+      }
+
+      // --------------------------------------------------------
+      // ORDER INPUTS ONLY
+      //
+      // These are facts about what the customer requested.
+      // The Edge Function must recompute anything financial.
+      // --------------------------------------------------------
+      const clientOrderId =
+        generateUUID();
+
+      const orderPayload = {
+        client_order_id:
+          clientOrderId,
+
+        phone_number:
+          phone,
+
+        body_weight_kg:
+          weight,
+
+        plan_type:
+          planType,
+
+        plan_name:
+          planName,
+
+        weight_class:
+          `Class ${wc.name}`,
+
+        weight_class_short:
+          wc.name,
+
+        duration_days:
+          goal === 'loading'
+            ? 5
+            : duration,
+
+        training_days_per_week:
+          goal === 'loading'
+            ? null
+            : trainingDaysPerWeek,
+
+        // These are quantities, not money.
+        total_sachets:
+          goal === 'loading'
+            ? totalSachets
+            : duration,
+
+        training_sachet_days:
+          goal === 'loading'
+            ? 0
+            : totalTrainingDays,
+
+        rest_sachet_days:
+          goal === 'loading'
+            ? 0
+            : totalRestDays,
+
+        location,
+
+        gym,
+
+        message: '',
+
+        // Explicitly absent:
+        // total_kes
+        // gross_amount
+        // discount_amount
+        // net_amount
+        // discount_applied
+        // is_member
+        // tier
+      };
+
+      // --------------------------------------------------------
+      // DISPLAY SUMMARY
+      //
+      // No financial amount is displayed as authoritative.
+      // --------------------------------------------------------
+      let summaryRowsHtml = '';
+
+      if (
+        goal === 'loading'
+      ) {
+        summaryRowsHtml = `
+          <div class="summary-row">
+            <span class="summary-label">Phone Number</span>
+            <span class="summary-val">${escapeHtml(phone)}</span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Weight Class</span>
+            <span class="summary-val">
+              Class ${escapeHtml(wc.name)}
+              (${escapeHtml(wc.label)},
+              Dose → ${escapeHtml(wc.sachetG)}g)
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Phase / Plan</span>
+            <span class="summary-val">
+              ${escapeHtml(planName)}
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Total Sachets</span>
+            <span class="summary-val">
+              ${totalSachets} Sachets
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Verified Status</span>
+            <span class="summary-val">
+              ${isMember
+                ? '👑 Ironclad Member'
+                : 'Standard Tier'}
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Verified Orders</span>
+            <span class="summary-val">
+              ${completedOrders}
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">This Order</span>
+            <span class="summary-val">
+              #${nextOrderNumber}
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Location</span>
+            <span class="summary-val">
+              ${escapeHtml(location)}
+              ${gym
+                ? ' (' + escapeHtml(gym) + ')'
+                : ''}
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Final Price</span>
+            <span class="summary-val gold">
+              Confirmed securely when order is submitted
+            </span>
+          </div>
+        `;
+      } else {
+        summaryRowsHtml = `
+          <div class="summary-row">
+            <span class="summary-label">Phone Number</span>
+            <span class="summary-val">${escapeHtml(phone)}</span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Weight Class</span>
+            <span class="summary-val">
+              Class ${escapeHtml(wc.name)}
+              (${escapeHtml(wc.label)},
+              Dose → ${escapeHtml(wc.sachetG)}g)
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Phase / Duration</span>
+            <span class="summary-val">
+              ${escapeHtml(planName)}
+              (${duration} Days)
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Training Days</span>
+            <span class="summary-val">
+              ${totalTrainingDays} Training Days
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Rest Days</span>
+            <span class="summary-val">
+              ${totalRestDays} Rest Days
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Verified Status</span>
+            <span class="summary-val">
+              ${isMember
+                ? '👑 Ironclad Member'
+                : 'Standard Tier'}
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Verified Orders</span>
+            <span class="summary-val">
+              ${completedOrders}
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">This Order</span>
+            <span class="summary-val">
+              #${nextOrderNumber}
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Location</span>
+            <span class="summary-val">
+              ${escapeHtml(location)}
+              ${gym
+                ? ' (' + escapeHtml(gym) + ')'
+                : ''}
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Final Price</span>
+            <span class="summary-val gold">
+              Confirmed securely when order is submitted
+            </span>
+          </div>
+        `;
+      }
+
+      // --------------------------------------------------------
+      // BENEFITS / STATUS
+      // --------------------------------------------------------
+      const benefitsContainer =
+        document.getElementById(
+          'membership-benefits-container'
+        );
+
+      let loyaltyMessage = '';
+
+      if (isMember) {
+        if (isMilestoneOrder) {
+          loyaltyMessage =
+            'Your verified Ironclad status qualifies this order for a milestone reward. The final discount will be calculated and confirmed shortly.';
+        } else {
+          loyaltyMessage =
+            'Your verified Ironclad membership is active. Your final member pricing will be calculated and confirmed shortly.';
+        }
+      } else {
+        loyaltyMessage =
+          'Your verified status is Standard. Complete 4 successful orders to activate Ironclad membership.';
+      }
+
+      const benefitsHtml = `
+        <div style="border-radius:12px; padding:0.9rem; background:rgba(255,255,255,0.02); border:1px solid var(--border-color);">
+          <strong style="display:block; margin-bottom:0.4rem;">
+            ${isMember
+              ? 'You are an Ironclad Member'
+              : 'Your verified loyalty status'}
+          </strong>
+
+          <p style="margin:0; color:var(--text-secondary); font-size:0.9rem;">
+            ${escapeHtml(loyaltyMessage)}
+          </p>
+
+          <ul style="margin:0.7rem 0 0; padding-left:1.1rem; color:var(--text-secondary); font-size:0.9rem;">
+            <li>Permanent 10% member discount once Ironclad membership is active</li>
+            <li>Milestone rewards apply only to qualifying orders while Ironclad membership is active</li>
+            <li>Priority packaging and earlier delivery windows</li>
+            <li>Exclusive member-only rates, promos and updates via WhatsApp</li>
+          </ul>
+        </div>
+      `;
+
+      if (benefitsContainer) {
+        benefitsContainer.innerHTML =
+          benefitsHtml;
+      }
+
+      document.getElementById(
+        'plan-title'
+      ).textContent =
+        `${planName.toUpperCase()} SUMMARY`;
+
+      document.getElementById(
+        'summary-rows'
+      ).innerHTML =
+        summaryRowsHtml;
+
+      const bannerBox =
+        document.getElementById(
+          'discount-banner-container'
+        );
+
+      // --------------------------------------------------------
+      // IMPORTANT:
+      // This banner describes eligibility only.
+      // It does NOT calculate or state a monetary discount.
+      // --------------------------------------------------------
+      if (isMilestoneOrder) {
+        bannerBox.innerHTML =
+          `<div class="discount-banner">
+            🎁 Milestone reward eligibility detected. Final pricing is confirmed securely when the order is submitted.
+          </div>`;
+      } else if (isMember) {
+        bannerBox.innerHTML =
+          `<div class="discount-banner">
+            👑 Ironclad member pricing detected. Final pricing is confirmed securely when the order is submitted.
+          </div>`;
+      } else {
+        bannerBox.innerHTML = '';
+      }
+
+
+      const orderMsgWithoutPrice = [
+        "Hello! I'd like to place an order.",
+        `Phone: ${phone}`,
+        `Plan: ${planName}`,
+        `Weight Class: Class ${wc.name}`,
+        `Verified Orders: ${completedOrders}`,
+        `Order Number: #${nextOrderNumber}`,
+        `Location: ${location}${gym ? ', ' + gym : ''}`
+      ].join('\n');
+
+      const whatsappBtn =
+        document.getElementById(
+          'whatsapp-btn'
+        );
+
+      whatsappBtn.href = '#';
+
+      whatsappBtn.setAttribute(
+        'aria-label',
+        'Confirm order price securely and open WhatsApp'
+      );
+
+      // --------------------------------------------------------
+      // SUBMISSION HANDLER
+      //
+      // WhatsApp is NOT opened until the server confirms the
+      // order AND returns an authoritative price.
+      //
+      // This prevents the customer from being sent a browser-
+      // calculated price that the server did not authorize.
+      // --------------------------------------------------------
+      whatsappBtn.onclick =
+        async function(e) {
+          e.preventDefault();
+
+          const originalButtonHtml =
+            whatsappBtn.innerHTML;
+
+          whatsappBtn.style.pointerEvents =
+            'none';
+
+          whatsappBtn.innerHTML =
+            'Confirming price...';
+
+          try {
+            enqueueOrder(
+              orderPayload
+            );
+
+            const res =
+              await createOrderInSupabase(
+                orderPayload
+              );
+
+            if (
+              !res ||
+              res.error
+            ) {
+              throw new Error(
+                res?.error ||
+                'The server could not confirm this order.'
+              );
+            }
+
+            const serverPricing =
+              getServerPricing(
+                res.pricing
+              );
+
+            if (!serverPricing) {
+              throw new Error(
+                'The server accepted the order but did not return an authoritative final price. WhatsApp was not opened to prevent an incorrect payment amount.'
+              );
+            }
+
+            // Only now has the order been financially confirmed.
+            removeQueuedOrder(
+              clientOrderId
+            );
+
+            const finalTotal =
+              serverPricing.net;
+
+            const discountText =
+              serverPricing.discount > 0
+                ? `Discount: −${formatKES(serverPricing.discount)}`
+                : 'Discount: None';
+
+            const confirmedOrderMsg = [
+              "Hello! I'd like to place an order.",
+              `Phone: ${phone}`,
+              `Plan: ${planName}`,
+              `Weight Class: Class ${wc.name}`,
+              `Verified Orders: ${completedOrders}`,
+              `Order Number: #${nextOrderNumber}`,
+              `Total: ${formatKES(finalTotal)}`,
+              discountText,
+              `Location: ${location}${gym ? ', ' + gym : ''}`
+            ].join('\n');
+
+            const confirmedWaUrl =
+              `https://wa.me/254115509593?text=${encodeURIComponent(
+                confirmedOrderMsg
+              )}`;
+
+            // Update UI with the server-authoritative amount.
+            const rows =
+              document.getElementById(
+                'summary-rows'
+              );
+
+            if (rows) {
+              rows.insertAdjacentHTML(
+                'beforeend',
+                `
+                  <div class="summary-row">
+                    <span class="summary-label">Server-Confirmed Price</span>
+                    <span class="summary-val gold">
+                      ${formatKES(finalTotal)}
+                    </span>
+                  </div>
+                `
+              );
+            }
+
+            window.open(
+              confirmedWaUrl,
+              '_blank'
+            );
+          } catch (err) {
+            console.error(
+              'Order save flow failed:',
+              err
+            );
+
+            // Keep the order in the queue.
+            // DO NOT open WhatsApp with an unverified price.
+            showDebug(
+              err?.message ||
+              'Order pricing could not be confirmed. The order has been retained for retry.',
+              'warn',
+              20000
+            );
+          } finally {
+            whatsappBtn.style.pointerEvents =
+              '';
+
+            whatsappBtn.innerHTML =
+              originalButtonHtml;
+          }
+        };
+
+      // --------------------------------------------------------
+      // COPY HELPER
+      //
+      // Copies only non-financial order details. The final price
+      // is intentionally omitted until server confirmation.
+      // --------------------------------------------------------
+      const copyBtnId =
+        'copy-order-btn';
+
+      let copyBtn =
+        document.getElementById(
+          copyBtnId
+        );
+
+      if (!copyBtn) {
+        copyBtn =
+          document.createElement(
+            'button'
+          );
+
+        copyBtn.id =
+          copyBtnId;
+
+        copyBtn.className =
+          'btn-action';
+
+        copyBtn.style.marginTop =
+          '0.5rem';
+
+        copyBtn.textContent =
+          'Copy Order Details';
+
+        copyBtn.type =
+          'button';
+
+        whatsappBtn.parentNode.insertBefore(
+          copyBtn,
+          whatsappBtn.nextSibling
+        );
+      }
+
+      copyBtn.onclick =
+        async () => {
+          try {
+            await navigator.clipboard.writeText(
+              orderMsgWithoutPrice
+            );
+
+            alert(
+              'Order details copied. Final price is confirmed securely during order submission.'
+            );
+          } catch (err) {
+            showDebug(
+              'Unable to copy order details to clipboard.',
+              'warn'
+            );
+          }
+        };
+
+      const resultBox =
+        document.getElementById(
+          'result-box'
+        );
+
+      resultBox.classList.add(
+        'active'
+      );
+
+      setTimeout(
+        () =>
+          resultBox.scrollIntoView({
+            behavior: 'smooth'
+          }),
+        100
+      );
+
+    } catch (err) {
+      console.error(
+        'Plan preparation failed:',
+        err
+      );
+
+      showDebug(
+        err?.message ||
+        String(err),
+        'error'
+      );
+
+      alert(
+        err?.message ||
+        'Unable to prepare the plan right now.'
+      );
+    } finally {
+      submitBtn.disabled =
+        false;
+
+      submitBtn.textContent =
+        'CALCULATE & CONFIRM PLAN';
+    }
+  }
+
+  // ============================================================
+  // 12. HTML ESCAPING
+  // ============================================================
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 </script>
 </body>

@@ -4,19 +4,48 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error("Missing Supabase environment configuration.");
+}
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
+const db = supabase.schema("v2");
 
 const PHONE_REGEX = /^\+254[17]\d{8}$/;
+const IRONCLAD_TIER = "ironclad_vip";
+const LEAD_TIER = "lead";
+
+const MEMBER_DISCOUNT_RATE = 0.10;
+const MILESTONE_DISCOUNT_RATE = 0.30;
+
+// Original business pricing formula moved out of the browser.
+const TUB_COST_KES = 3000;
+const TUB_GRAMS = 410;
+const PPG = TUB_COST_KES / TUB_GRAMS;
+const MYLAR_SMALL = 1095 / 800;
+const MYLAR_LARGE = 1095 / 400;
+const BASE_PROFIT = 22;
+
+const WEIGHT_CLASSES = [
+  { name: "A", min: 30, max: 50, sachetG: 3.0, bonusProfit: 0 },
+  { name: "B", min: 51, max: 67, sachetG: 4.5, bonusProfit: 2 },
+  { name: "C", min: 68, max: 80, sachetG: 6.0, bonusProfit: 4 },
+  { name: "D", min: 81, max: 100, sachetG: 7.5, bonusProfit: 6 },
+  { name: "E", min: 101, max: 250, sachetG: 9.0, bonusProfit: 8 },
+] as const;
+
+type WeightClass = (typeof WEIGHT_CLASSES)[number];
+type PlanType = "fast_saturation" | "daily_maintenance";
 
 function corsHeaders() {
   return {
-    "content-type": "application/json",
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "POST, OPTIONS",
-    "access-control-allow-headers": "authorization, apikey, content-type",
-    "access-control-max-age": "86400",
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+    "Access-Control-Max-Age": "86400",
   };
 }
 
@@ -27,222 +56,442 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-async function validatePayload(payload: any) {
-  if (!payload || typeof payload !== "object") {
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function roundUpKES(value: number): number {
+  return Math.ceil(value - Number.EPSILON);
+}
+
+function normalizePhone(raw: unknown): string {
+  return typeof raw === "string" ? raw.trim() : "";
+}
+
+function normalizeWeightClass(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  const value = raw.trim().replace(/^Class\s*/i, "").trim().toUpperCase();
+  return value.length === 1 ? value : value.slice(-1);
+}
+
+function getWeightClass(weight: number): WeightClass | null {
+  return WEIGHT_CLASSES.find((item) => weight >= item.min && weight <= item.max) ?? null;
+}
+
+function getMylarCost(grams: number): number {
+  return grams <= 4.5 ? MYLAR_SMALL : MYLAR_LARGE;
+}
+
+function getSachetCost(grams: number): number {
+  return round2(PPG * grams + getMylarCost(grams));
+}
+
+function getSachetPrice(grams: number, bonusProfit = 0): number {
+  return roundUpKES(getSachetCost(grams) + BASE_PROFIT + bonusProfit);
+}
+
+function isPlanType(value: unknown): value is PlanType {
+  return value === "fast_saturation" || value === "daily_maintenance";
+}
+
+function validatePayload(body: any): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
     return "Invalid JSON payload.";
   }
 
-  for (const key of ["client_order_id", "phone_number"]) {
-    if (!payload[key] || typeof payload[key] !== "string") {
-      return `${key} is required and must be a string.`;
-    }
+  if (typeof body.client_order_id !== "string" || !body.client_order_id.trim()) {
+    return "client_order_id is required.";
   }
 
-  if (!PHONE_REGEX.test(payload.phone_number)) {
+  const phone = normalizePhone(body.phone_number);
+  if (!PHONE_REGEX.test(phone)) {
     return "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX.";
   }
 
-  if (typeof payload.total_kes !== "number" && typeof payload.total_kes !== "string") {
-    return "total_kes is required and must be a number.";
+  if (!isPlanType(body.plan_type)) {
+    return "plan_type must be fast_saturation or daily_maintenance.";
   }
 
-  if (payload.body_weight_kg != null && typeof payload.body_weight_kg !== "number" && typeof payload.body_weight_kg !== "string") {
-    return "body_weight_kg must be a number if provided.";
+  const weight = Number(body.body_weight_kg);
+  if (!Number.isFinite(weight) || weight < 30 || weight > 250) {
+    return "body_weight_kg must be between 30 and 250 kg.";
   }
 
-  if (payload.weight_class_short != null && typeof payload.weight_class_short !== "string") {
-    return "weight_class_short must be a string if provided.";
+  const suppliedWeightClass = normalizeWeightClass(body.weight_class_short ?? body.weight_class);
+  const computedWeightClass = getWeightClass(weight);
+  if (!computedWeightClass) {
+    return "Unsupported body weight.";
   }
 
-  const totalKes = Number(payload.total_kes);
-  if (Number.isNaN(totalKes) || totalKes < 0) {
-    return "total_kes must be a non-negative number.";
+  if (suppliedWeightClass && suppliedWeightClass !== computedWeightClass.name) {
+    return "weight_class does not match body_weight_kg.";
   }
 
-  if (typeof payload.is_member !== "boolean") {
-    return "is_member is required and must be a boolean.";
+  if (body.plan_type === "daily_maintenance") {
+    const duration = Number(body.duration_days);
+    const trainingDays = Number(body.training_days_per_week);
+
+    if (![7, 14, 21, 30].includes(duration)) {
+      return "duration_days must be 7, 14, 21, or 30 for daily maintenance.";
+    }
+
+    if (!Number.isInteger(trainingDays) || trainingDays < 1 || trainingDays > 7) {
+      return "training_days_per_week must be an integer from 1 to 7.";
+    }
   }
 
-  if (typeof payload.plan_name !== "string" || payload.plan_name.length === 0) {
-    return "plan_name is required and must be a non-empty string.";
-  }
-
-  if (typeof payload.weight_class !== "string" || payload.weight_class.length === 0) {
-    return "weight_class is required and must be a non-empty string.";
+  if (body.plan_type === "fast_saturation") {
+    if (body.duration_days != null && Number(body.duration_days) !== 5) {
+      return "Fast saturation has a fixed duration of 5 days.";
+    }
   }
 
   return null;
 }
 
 async function getOrCreateUser(profile: {
-  phone_number: string;
-  body_weight_kg?: number | string;
-  weight_class_short?: string;
-  weight_class?: string;
-  location?: string;
-  preferred_gym?: string;
+  phone: string;
+  weight: number;
+  weightClass: string;
+  location: string;
+  gym: string;
 }) {
-  const { data: existingUser, error: lookupError } = await supabase
+  const { data: existing, error: lookupError } = await db
     .from("users")
     .select("id")
-    .eq("phone_number", profile.phone_number)
+    .eq("phone_number", profile.phone)
     .maybeSingle();
 
   if (lookupError) {
-    throw lookupError;
+    throw new Error(`User lookup failed: ${lookupError.message}`);
   }
 
-  const profileData: Record<string, unknown> = {};
-  if (profile.body_weight_kg != null) profileData.body_weight_kg = Number(profile.body_weight_kg);
-  const weightClassSource = profile.weight_class_short?.trim() || profile.weight_class?.trim();
-  if (weightClassSource) {
-    const normalizedClass = weightClassSource.replace(/^Class\s*/i, '').trim();
-    profileData.weight_class = normalizedClass.length === 1 ? normalizedClass : normalizedClass.slice(-1);
-  }
-  if (profile.location) profileData.location = profile.location;
-  if (profile.preferred_gym) profileData.preferred_gym = profile.preferred_gym;
-
-  if (existingUser) {
-    if (Object.keys(profileData).length > 0) {
-      const { error: updateError } = await supabase
-        .from("users")
-        .update(profileData)
-        .eq("id", existingUser.id);
-
-      if (updateError) {
-        throw updateError;
-      }
-    }
-    return existingUser.id;
-  }
-
-  const insertData = {
-    phone_number: profile.phone_number,
-    created_at: new Date().toISOString(),
-    ...profileData,
+  const profileData = {
+    body_weight_kg: profile.weight,
+    weight_class: profile.weightClass,
+    location: profile.location || null,
+    preferred_gym: profile.gym || null,
+    updated_at: new Date().toISOString(),
   };
 
-  const { data: newUser, error: insertError } = await supabase
+  if (existing?.id) {
+    const { error } = await db
+      .from("users")
+      .update(profileData)
+      .eq("id", existing.id);
+
+    if (error) {
+      throw new Error(`User update failed: ${error.message}`);
+    }
+
+    return existing.id;
+  }
+
+  const { data: created, error: insertError } = await db
     .from("users")
-    .insert(insertData)
+    .insert({
+      phone_number: profile.phone,
+      ...profileData,
+    })
     .select("id")
+    .single();
+
+  if (!insertError && created?.id) {
+    return created.id;
+  }
+
+  const { data: retry, error: retryError } = await db
+    .from("users")
+    .select("id")
+    .eq("phone_number", profile.phone)
     .maybeSingle();
 
-  if (insertError) {
-    const { data: retryUser, error: retryError } = await supabase
-      .from("users")
-      .select("id")
-      .eq("phone_number", profile.phone_number)
-      .maybeSingle();
-
-    if (retryError || !retryUser) {
-      throw insertError;
-    }
-    return retryUser.id;
+  if (retryError || !retry?.id) {
+    throw new Error(`User creation failed: ${insertError?.message ?? "unknown error"}`);
   }
 
-  if (!newUser) {
-    throw new Error("Failed to create or find user.");
-  }
-
-  return newUser.id;
+  return retry.id;
 }
 
-serve(async (req) => {
+// ----------------------------------------------------------
+// THE NEW DYNAMIC STREAK CALCULATOR
+// ----------------------------------------------------------
+async function getIroncladEligibility(phone: string) {
+  const { data: lastMilestone, error: milestoneError } = await db
+    .from("orders")
+    .select("created_at")
+    .eq("phone_number", phone)
+    .eq("status", "paid")
+    .eq("is_milestone_reward", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (milestoneError) {
+    throw new Error(`Failed to query milestone anchor: ${milestoneError.message}`);
+  }
+
+  let streakCount = 0;
+  let isVip = false;
+
+  if (lastMilestone) {
+    // If a milestone exists, they are officially VIP
+    isVip = true;
+    const { count, error: countError } = await db
+      .from("orders")
+      .select("*", { count: "exact", head: true })
+      .eq("phone_number", phone)
+      .eq("status", "paid")
+      .gt("created_at", lastMilestone.created_at);
+
+    if (countError) throw new Error(`Failed to count subsequent orders: ${countError.message}`);
+    streakCount = count || 0;
+  } else {
+    // If no milestone, count all history to see if they've hit the initial threshold
+    const { count, error: countError } = await db
+      .from("orders")
+      .select("*", { count: "exact", head: true })
+      .eq("phone_number", phone)
+      .eq("status", "paid");
+
+    if (countError) throw new Error(`Failed to count historical orders: ${countError.message}`);
+    streakCount = count || 0;
+    
+    // If they somehow have 4+ orders but missed a milestone, they are still VIP
+    if (streakCount >= 4) isVip = true; 
+  }
+
+  // Exactly 3 paid orders means this incoming checkout is the 4th consecutive order.
+  const isMilestone = streakCount === 3;
+  
+  return { streakCount, isVip, isMilestone };
+}
+
+function calculateFinancials(args: {
+  planType: PlanType;
+  weightClass: WeightClass;
+  durationDays: number;
+  trainingDaysPerWeek: number | null;
+  isVip: boolean;
+  isMilestone: boolean;
+}) {
+  let grossAmount: number;
+  let totalSachets: number;
+  let trainingSachetDays = 0;
+  let restSachetDays = 0;
+
+  if (args.planType === "fast_saturation") {
+    totalSachets = 20;
+    const sachetPrice = getSachetPrice(args.weightClass.sachetG, args.weightClass.bonusProfit);
+    grossAmount = round2(sachetPrice * totalSachets);
+  } else {
+    if (!args.trainingDaysPerWeek || !Number.isInteger(args.trainingDaysPerWeek)) {
+      throw new Error("Invalid training_days_per_week.");
+    }
+
+    const totalDays = args.durationDays;
+    trainingSachetDays = Math.round((args.trainingDaysPerWeek / 7) * totalDays);
+    restSachetDays = totalDays - trainingSachetDays;
+    totalSachets = trainingSachetDays + restSachetDays;
+
+    const trainingSachetPrice = getSachetPrice(args.weightClass.sachetG, args.weightClass.bonusProfit) + 5;
+    const restSachetPrice = getSachetPrice(3.0, 0);
+
+    const trainingSubtotal = round2(trainingSachetDays * trainingSachetPrice);
+    const restSubtotal = round2(restSachetDays * restSachetPrice);
+    grossAmount = round2(trainingSubtotal + restSubtotal);
+  }
+
+  let discountRate = 0;
+  let discountApplied = "NONE";
+
+  // Milestone evaluates first because it overrides the standard VIP discount
+  if (args.isMilestone) {
+    discountRate = MILESTONE_DISCOUNT_RATE;
+    discountApplied = "MILESTONE_30";
+  } else if (args.isVip) {
+    discountRate = MEMBER_DISCOUNT_RATE;
+    discountApplied = "VIP_10";
+  }
+
+  const discountAmount = round2(grossAmount * discountRate);
+  const netAmount = round2(grossAmount - discountAmount);
+
+  return {
+    grossAmount,
+    discountAmount,
+    netAmount,
+    discountApplied,
+    discountRate,
+    totalSachets,
+    trainingSachetDays,
+    restSachetDays,
+  };
+}
+
+serve(async (req: Request) => {
   try {
     if (req.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders(),
-      });
+      return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
     if (req.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405, headers: corsHeaders() });
-    }
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      return jsonResponse({ error: "Missing Supabase environment configuration." }, 500);
+      return jsonResponse({ error: "Method Not Allowed" }, 405);
     }
 
     const body = await req.json().catch(() => null);
-  const validationError = await validatePayload(body);
-  if (validationError) {
-    return jsonResponse({ error: validationError }, 400);
-  }
+    const validationError = validatePayload(body);
 
-  const userPhone = body.phone_number.trim();
-  const userId = await getOrCreateUser({
-    phone_number: userPhone,
-    body_weight_kg: body.body_weight_kg != null ? Number(body.body_weight_kg) : undefined,
-    weight_class_short: body.weight_class_short?.trim(),
-    weight_class: body.weight_class?.trim(),
-    location: (body.location || "").trim(),
-    preferred_gym: (body.gym || "").trim(),
-  });
-
-  const payload = {
-    client_order_id: body.client_order_id.trim(),
-    user_id: userId,
-    phone_number: userPhone,
-    plan_name: body.plan_name.trim(),
-    weight_class: body.weight_class.trim(),
-    total_kes: Number(body.total_kes),
-    location: (body.location || "").trim(),
-    gym: (body.gym || "").trim(),
-    is_member: body.is_member,
-    message: (body.message || "").trim(),
-    membership_incremented: false,
-  };
-
-  const { data: existingOrder, error: lookupError } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("client_order_id", payload.client_order_id)
-    .maybeSingle();
-
-  if (lookupError) {
-    return jsonResponse({ error: lookupError.message || "Failed to lookup existing order." }, 500);
-  }
-
-  if (existingOrder) {
-    return jsonResponse({ status: "exists", order: existingOrder }, 200);
-  }
-
-  const { data: insertedOrder, error: insertError } = await supabase
-    .from("orders")
-    .insert([payload])
-    .select()
-    .maybeSingle();
-
-  if (insertError || !insertedOrder) {
-    const errorText = insertError?.message || "Failed to insert order.";
-    if (errorText.includes('user_id') || errorText.includes('column "user_id"')) {
-      const retryPayload = { ...payload };
-      delete retryPayload.user_id;
-
-      const { data: retriedOrder, error: retryError } = await supabase
-        .from("orders")
-        .insert([retryPayload])
-        .select()
-        .maybeSingle();
-
-      if (retryError || !retriedOrder) {
-        return jsonResponse({ error: retryError?.message || "Failed to insert order without user_id." }, 500);
-      }
-
-      return jsonResponse({
-        status: "ok",
-        order: retriedOrder,
-        warning: "Order saved without user_id because the orders table does not contain that column yet.",
-      }, 201);
+    if (validationError) {
+      return jsonResponse({ error: validationError }, 400);
     }
 
-    return jsonResponse({ error: errorText }, 500);
-  }
+    const phone = normalizePhone(body.phone_number);
+    const weight = Number(body.body_weight_kg);
+    const weightClass = getWeightClass(weight);
+    if (!weightClass) {
+      return jsonResponse({ error: "Unsupported body weight." }, 400);
+    }
 
-  return jsonResponse({ status: "ok", order: insertedOrder }, 201);
-  } catch (err) {
-    return jsonResponse({ error: err?.message || String(err) }, 500);
+    const suppliedClass = normalizeWeightClass(body.weight_class_short ?? body.weight_class);
+    if (suppliedClass && suppliedClass !== weightClass.name) {
+      return jsonResponse({ error: "weight_class does not match body_weight_kg." }, 400);
+    }
+
+    const planType = body.plan_type as PlanType;
+    const durationDays = planType === "fast_saturation" ? 5 : Number(body.duration_days);
+    const trainingDaysPerWeek = planType === "fast_saturation" ? null : Number(body.training_days_per_week);
+
+    // 1. Idempotency Check
+    const clientOrderId = body.client_order_id.trim();
+    const { data: existingOrder, error: existingOrderError } = await db
+      .from("orders")
+      .select("*")
+      .eq("client_order_id", clientOrderId)
+      .maybeSingle();
+
+    if (existingOrderError) {
+      return jsonResponse({ error: "Failed to check existing order.", details: existingOrderError.message }, 500);
+    }
+
+    if (existingOrder) {
+      return jsonResponse({
+        status: "exists",
+        order: existingOrder,
+        pricing: {
+          gross_amount: existingOrder.gross_amount,
+          discount_amount: existingOrder.discount_amount,
+          net_amount: existingOrder.net_amount ?? existingOrder.total_kes,
+          discount_applied: existingOrder.discount_applied ?? "NONE",
+        },
+      }, 200);
+    }
+
+    // 2. Resolve User & Streak Facts Dynamically
+    const userId = await getOrCreateUser({
+      phone,
+      weight,
+      weightClass: weightClass.name,
+      location: typeof body.location === "string" ? body.location.trim() : "",
+      gym: typeof body.gym === "string" ? body.gym.trim() : "",
+    });
+
+    const eligibility = await getIroncladEligibility(phone);
+
+    // 3. Compute Financials Statelessly
+    const financials = calculateFinancials({
+      planType,
+      weightClass,
+      durationDays,
+      trainingDaysPerWeek,
+      isVip: eligibility.isVip,
+      isMilestone: eligibility.isMilestone,
+    });
+
+    const planName = planType === "fast_saturation" ? "Fast Saturation (5 Days)" : "Daily Maintenance";
+
+    // 4. Construct Immutable Database Payload
+    const orderPayload = {
+      client_order_id: clientOrderId,
+      user_id: userId,
+      phone_number: phone,
+      plan_type: planType,
+      plan_name: planName,
+      weight_class: weightClass.name,
+      body_weight_kg: weight,
+      duration_days: durationDays,
+      training_days_per_week: trainingDaysPerWeek,
+      total_sachets: financials.totalSachets,
+      training_sachet_days: financials.trainingSachetDays,
+      rest_sachet_days: financials.restSachetDays,
+      location: typeof body.location === "string" ? body.location.trim() : "",
+      gym: typeof body.gym === "string" ? body.gym.trim() : "",
+      message: typeof body.message === "string" ? body.message.trim() : "",
+      
+      gross_amount: financials.grossAmount,
+      discount_amount: financials.discountAmount,
+      net_amount: financials.netAmount,
+      total_kes: financials.netAmount,
+      discount_applied: financials.discountApplied,
+      
+      // The single point of truth
+      is_milestone_reward: eligibility.isMilestone,
+    };
+
+    const { data: insertedOrder, error: insertError } = await db
+      .from("orders")
+      .insert(orderPayload)
+      .select()
+      .single();
+
+    if (insertError || !insertedOrder) {
+      const errorText = insertError?.message ?? "Failed to create order.";
+
+      if (/duplicate|unique|client_order_id/i.test(errorText)) {
+        const { data: racedOrder, error: raceLookupError } = await db
+          .from("orders")
+          .select("*")
+          .eq("client_order_id", clientOrderId)
+          .maybeSingle();
+
+        if (!raceLookupError && racedOrder) {
+          return jsonResponse({
+            status: "exists",
+            order: racedOrder,
+            pricing: {
+              gross_amount: racedOrder.gross_amount,
+              discount_amount: racedOrder.discount_amount,
+              net_amount: racedOrder.net_amount ?? racedOrder.total_kes,
+              discount_applied: racedOrder.discount_applied ?? "NONE",
+            },
+          }, 200);
+        }
+      }
+
+      return jsonResponse({ error: "Failed to create order.", details: errorText }, 500);
+    }
+
+    // 5. Provide UI Continuity
+    // We maintain the expected JSON structure so your frontend doesn't break.
+    return jsonResponse({
+      status: "ok",
+      order: insertedOrder,
+      membership: {
+        tier: eligibility.isVip ? IRONCLAD_TIER : LEAD_TIER,
+        completed_orders: eligibility.streakCount,
+        next_order: eligibility.streakCount + 1,
+        is_vip: eligibility.isVip,
+        is_milestone: eligibility.isMilestone,
+      },
+      pricing: {
+        gross_amount: financials.grossAmount,
+        discount_amount: financials.discountAmount,
+        net_amount: financials.netAmount,
+        discount_applied: financials.discountApplied,
+      },
+    }, 201);
+  } catch (error) {
+    console.error("Order handler error:", error);
+    return jsonResponse({ error: error instanceof Error ? error.message : String(error) }, 500);
   }
 });
