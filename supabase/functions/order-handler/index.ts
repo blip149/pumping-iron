@@ -20,7 +20,6 @@ const LEAD_TIER = "lead";
 const MEMBER_DISCOUNT_RATE = 0.10;
 const MILESTONE_DISCOUNT_RATE = 0.30;
 
-// Original business pricing formula moved out of the browser.
 const TUB_COST_KES = 3000;
 const TUB_GRAMS = 410;
 const PPG = TUB_COST_KES / TUB_GRAMS;
@@ -94,13 +93,15 @@ function isPlanType(value: unknown): value is PlanType {
   return value === "fast_saturation" || value === "daily_maintenance";
 }
 
-function validatePayload(body: any): string | null {
+function validatePayload(body: any, requireClientOrderId = true): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return "Invalid JSON payload.";
   }
 
-  if (typeof body.client_order_id !== "string" || !body.client_order_id.trim()) {
-    return "client_order_id is required.";
+  if (requireClientOrderId) {
+    if (typeof body.client_order_id !== "string" || !body.client_order_id.trim()) {
+      return "client_order_id is required.";
+    }
   }
 
   const phone = normalizePhone(body.phone_number);
@@ -214,57 +215,25 @@ async function getOrCreateUser(profile: {
 }
 
 // ----------------------------------------------------------
-// THE NEW DYNAMIC STREAK CALCULATOR
+// FIXED STREAK & ELIGIBILITY CALCULATOR
 // ----------------------------------------------------------
 async function getIroncladEligibility(phone: string) {
-  const { data: lastMilestone, error: milestoneError } = await db
+  const { count: totalPaid, error: totalError } = await db
     .from("orders")
-    .select("created_at")
+    .select("*", { count: "exact", head: true })
     .eq("phone_number", phone)
-    .eq("status", "paid")
-    .eq("is_milestone_reward", true)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .eq("status", "paid");
 
-  if (milestoneError) {
-    throw new Error(`Failed to query milestone anchor: ${milestoneError.message}`);
-  }
+  if (totalError) throw new Error(`Failed to count orders: ${totalError.message}`);
+  const paidCount = totalPaid || 0;
 
-  let streakCount = 0;
-  let isVip = false;
+  // VIP status unlocks strictly AFTER 4 completed paid orders (incoming order is #5+)
+  const isVip = paidCount >= 4;
 
-  if (lastMilestone) {
-    // If a milestone exists, they are officially VIP
-    isVip = true;
-    const { count, error: countError } = await db
-      .from("orders")
-      .select("*", { count: "exact", head: true })
-      .eq("phone_number", phone)
-      .eq("status", "paid")
-      .gt("created_at", lastMilestone.created_at);
+  // Milestone applies on the 4th VIP order (Order #8, #12, #16...)
+  const isMilestone = isVip && ((paidCount - 3) % 4 === 0);
 
-    if (countError) throw new Error(`Failed to count subsequent orders: ${countError.message}`);
-    streakCount = count || 0;
-  } else {
-    // If no milestone, count all history to see if they've hit the initial threshold
-    const { count, error: countError } = await db
-      .from("orders")
-      .select("*", { count: "exact", head: true })
-      .eq("phone_number", phone)
-      .eq("status", "paid");
-
-    if (countError) throw new Error(`Failed to count historical orders: ${countError.message}`);
-    streakCount = count || 0;
-    
-    // If they somehow have 4+ orders but missed a milestone, they are still VIP
-    if (streakCount >= 4) isVip = true; 
-  }
-
-  // Exactly 3 paid orders means this incoming checkout is the 4th consecutive order.
-  const isMilestone = streakCount === 3;
-  
-  return { streakCount, isVip, isMilestone };
+  return { streakCount: paidCount, isVip, isMilestone };
 }
 
 function calculateFinancials(args: {
@@ -305,7 +274,6 @@ function calculateFinancials(args: {
   let discountRate = 0;
   let discountApplied = "NONE";
 
-  // Milestone evaluates first because it overrides the standard VIP discount
   if (args.isMilestone) {
     discountRate = MILESTONE_DISCOUNT_RATE;
     discountApplied = "MILESTONE_30";
@@ -329,6 +297,16 @@ function calculateFinancials(args: {
   };
 }
 
+function membershipPayload(eligibility: { streakCount: number; isVip: boolean; isMilestone: boolean }) {
+  return {
+    tier: eligibility.isVip ? IRONCLAD_TIER : LEAD_TIER,
+    completed_orders: eligibility.streakCount,
+    next_order: eligibility.streakCount + 1,
+    is_vip: eligibility.isVip,
+    is_milestone: eligibility.isMilestone,
+  };
+}
+
 serve(async (req: Request) => {
   try {
     if (req.method === "OPTIONS") {
@@ -340,7 +318,23 @@ serve(async (req: Request) => {
     }
 
     const body = await req.json().catch(() => null);
-    const validationError = validatePayload(body);
+
+    if (body?.membership_only === true) {
+      const phone = normalizePhone(body?.phone_number);
+      if (!PHONE_REGEX.test(phone)) {
+        return jsonResponse({ error: "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX." }, 400);
+      }
+
+      const eligibility = await getIroncladEligibility(phone);
+
+      return jsonResponse({
+        status: "membership",
+        membership: membershipPayload(eligibility),
+      }, 200);
+    }
+
+    const isQuote = body?.quote_only === true;
+    const validationError = validatePayload(body, !isQuote);
 
     if (validationError) {
       return jsonResponse({ error: validationError }, 400);
@@ -362,7 +356,29 @@ serve(async (req: Request) => {
     const durationDays = planType === "fast_saturation" ? 5 : Number(body.duration_days);
     const trainingDaysPerWeek = planType === "fast_saturation" ? null : Number(body.training_days_per_week);
 
-    // 1. Idempotency Check
+    if (isQuote) {
+      const eligibility = await getIroncladEligibility(phone);
+      const financials = calculateFinancials({
+        planType,
+        weightClass,
+        durationDays,
+        trainingDaysPerWeek,
+        isVip: eligibility.isVip,
+        isMilestone: eligibility.isMilestone,
+      });
+
+      return jsonResponse({
+        status: "quote",
+        membership: membershipPayload(eligibility),
+        pricing: {
+          gross_amount: financials.grossAmount,
+          discount_amount: financials.discountAmount,
+          net_amount: financials.netAmount,
+          discount_applied: financials.discountApplied,
+        },
+      }, 200);
+    }
+
     const clientOrderId = body.client_order_id.trim();
     const { data: existingOrder, error: existingOrderError } = await db
       .from("orders")
@@ -387,7 +403,6 @@ serve(async (req: Request) => {
       }, 200);
     }
 
-    // 2. Resolve User & Streak Facts Dynamically
     const userId = await getOrCreateUser({
       phone,
       weight,
@@ -398,7 +413,6 @@ serve(async (req: Request) => {
 
     const eligibility = await getIroncladEligibility(phone);
 
-    // 3. Compute Financials Statelessly
     const financials = calculateFinancials({
       planType,
       weightClass,
@@ -410,7 +424,6 @@ serve(async (req: Request) => {
 
     const planName = planType === "fast_saturation" ? "Fast Saturation (5 Days)" : "Daily Maintenance";
 
-    // 4. Construct Immutable Database Payload
     const orderPayload = {
       client_order_id: clientOrderId,
       user_id: userId,
@@ -427,14 +440,13 @@ serve(async (req: Request) => {
       location: typeof body.location === "string" ? body.location.trim() : "",
       gym: typeof body.gym === "string" ? body.gym.trim() : "",
       message: typeof body.message === "string" ? body.message.trim() : "",
-      
+
       gross_amount: financials.grossAmount,
       discount_amount: financials.discountAmount,
       net_amount: financials.netAmount,
       total_kes: financials.netAmount,
       discount_applied: financials.discountApplied,
-      
-      // The single point of truth
+
       is_milestone_reward: eligibility.isMilestone,
     };
 
@@ -471,18 +483,10 @@ serve(async (req: Request) => {
       return jsonResponse({ error: "Failed to create order.", details: errorText }, 500);
     }
 
-    // 5. Provide UI Continuity
-    // We maintain the expected JSON structure so your frontend doesn't break.
     return jsonResponse({
       status: "ok",
       order: insertedOrder,
-      membership: {
-        tier: eligibility.isVip ? IRONCLAD_TIER : LEAD_TIER,
-        completed_orders: eligibility.streakCount,
-        next_order: eligibility.streakCount + 1,
-        is_vip: eligibility.isVip,
-        is_milestone: eligibility.isMilestone,
-      },
+      membership: membershipPayload(eligibility),
       pricing: {
         gross_amount: financials.grossAmount,
         discount_amount: financials.discountAmount,
