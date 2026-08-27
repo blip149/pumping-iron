@@ -150,6 +150,10 @@
     align-items: center;
   }
 
+  .hero-content {
+    max-width: 640px;
+  }
+
   .hero-title {
     font-family: var(--font-heading);
     font-size: clamp(2.3rem, 5vw, 3.6rem);
@@ -499,38 +503,14 @@
 </header>
 
 <section class="hero">
-  <div class="container hero-grid">
-    <div>
+  <div class="container">
+    <div class="hero-content">
       <span class="badge badge-gold">⚡ Loyalty Program Built for Lifters</span>
       <h1 class="hero-title">Order 4 Times consecutively.<br><span>Get Free VIP Membership.</span></h1>
-      <p class="hero-subtitle">We source Creatine Monohydrate from trusted suppliers and deliver pre-portioned to your precise body weight. Check your streak or place an order below.</p>
+      <p class="hero-subtitle">We source Creatine Monohydrate from trusted suppliers and deliver pre-portioned to your precise body weight.</p>
       <div style="margin-top:1.5rem; display:flex; flex-wrap:wrap; gap:0.8rem;">
+        <a href="#calculator" class="nav-btn" style="text-decoration:none; padding:0.9rem 1.5rem; font-size:1rem; border-radius: var(--radius-md);">Order now</a>
         <a href="membership.html" class="btn-action" style="text-decoration:none;">Learn More About Ironclad Membership</a>
-      </div>
-    </div>
-
-    <div class="tracker-card">
-      <div class="tracker-header">
-        <span class="badge badge-red" id="tracker-badge">Standard Tier</span>
-        <span style="font-size: 0.8rem; color: var(--text-muted);">M-Pesa Verification</span>
-      </div>
-
-      <h3 style="font-family: var(--font-heading); margin-bottom: 0.5rem;">Member Streak Lookup</h3>
-      <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.2rem;">Enter your M-Pesa phone number to pull up your verified streak from our database:</p>
-
-      <div class="input-group-row">
-        <input type="tel" id="verify-phone" class="form-control" placeholder="e.g. 0712345678" aria-label="M-Pesa phone for lookup">
-        <button class="btn-action" id="verify-btn" onclick="lookupMemberPhone()">Verify</button>
-      </div>
-
-      <div class="progress-container">
-        <div class="progress-label">
-          <span id="tracker-title">Streak Progress</span>
-          <span id="tracker-count" style="font-weight: 700;">0 / 4 Orders</span>
-        </div>
-        <div class="progress-bar">
-          <div class="progress-fill" id="tracker-progress"></div>
-        </div>
       </div>
     </div>
   </div>
@@ -597,6 +577,13 @@
           <label for="gym">Pickup Location / Gym</label>
           <input type="text" id="gym" class="form-control" placeholder="e.g. Gym Name / Landmark">
         </div>
+
+        <div class="full-width" style="display:flex; align-items:flex-start; gap:0.6rem; margin-top:0.25rem;">
+          <input type="checkbox" id="autoRenew" style="width:18px; height:18px; margin-top:0.15rem; accent-color: var(--accent-gold);">
+          <label for="autoRenew" style="text-transform:none; letter-spacing:normal; font-size:0.85rem; color:var(--text-secondary); margin-bottom:0;">
+            🔁 Auto-renew this plan  — cancel anytime.
+          </label>
+        </div>
       </div>
 
       <button class="btn-submit" onclick="calculatePlan()">CALCULATE & CONFIRM PLAN</button>
@@ -611,6 +598,44 @@
           <span>📲 PAY & ORDER VIA WHATSAPP</span>
         </a>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- STREAK LOOKUP SECTION (for returning customers) -->
+<section class="calc-section" id="loyalty" style="padding-top: 0;">
+  <div class="container">
+    <div class="section-title-wrap">
+      <span class="badge badge-red">Already Ordered With Us?</span>
+      <h2 class="section-title">Check Your Loyalty Streak</h2>
+      <p style="color: var(--text-secondary); margin-top: 0.75rem;">Enter your M-Pesa phone number to see how close you are to Ironclad VIP status.</p>
+    </div>
+
+    <div class="tracker-card" style="max-width: 520px; margin: 0 auto;">
+      <div class="tracker-header">
+        <span class="badge badge-red" id="tracker-badge">Standard Tier</span>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">M-Pesa Verification</span>
+      </div>
+
+      <h3 style="font-family: var(--font-heading); margin-bottom: 0.5rem;">Member Streak Lookup</h3>
+      <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.2rem;">Enter your M-Pesa phone number to pull up your verified streak from our database:</p>
+
+      <div class="input-group-row">
+        <input type="tel" id="verify-phone" class="form-control" placeholder="e.g. 0712345678" aria-label="M-Pesa phone for lookup">
+        <button class="btn-action" id="verify-btn" onclick="lookupMemberPhone()">Verify</button>
+      </div>
+
+      <div class="progress-container">
+        <div class="progress-label">
+          <span id="tracker-title">Streak Progress</span>
+          <span id="tracker-count" style="font-weight: 700;">0 / 4 Orders</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="tracker-progress"></div>
+        </div>
+      </div>
+
+      <div id="renewal-status" style="display:none; margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--border-color);"></div>
     </div>
   </div>
 </section>
@@ -768,6 +793,71 @@
     }
   }
 
+  async function fetchRenewalStatus(phone) {
+    const cleanPhone = normalizePhone(phone);
+    if (!cleanPhone) return { active: false };
+    const json = await callOrderHandler({ renewal_only: true, phone_number: cleanPhone });
+    return json?.renewal || { active: false };
+  }
+
+  async function cancelAutoRenew(phone) {
+    const btn = document.getElementById('cancel-renewal-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Cancelling...'; }
+
+    try {
+      const cleanPhone = normalizePhone(phone);
+      const json = await callOrderHandler({ cancel_renewal: true, phone_number: cleanPhone });
+      if (json?.cancelled) {
+        showDebug('Auto-renew cancelled. No further reorder reminders will be sent.', 'info');
+        await updateTrackerUI(cleanPhone);
+      } else {
+        showDebug('No active auto-renew found to cancel.', 'warn');
+      }
+    } catch (err) {
+      showDebug(err?.message || String(err), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Cancel Auto-Renew'; }
+    }
+  }
+
+  function renderRenewalStatus(renewal) {
+    const box = document.getElementById('renewal-status');
+    if (!renewal || !renewal.active) {
+      box.style.display = 'none';
+      box.innerHTML = '';
+      return;
+    }
+
+    box.style.display = 'block';
+
+    if (renewal.pendingPayment) {
+      const amountLabel = renewal.amountDue ? formatKES(renewal.amountDue) : 'confirm on WhatsApp';
+      box.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:700; color:var(--accent-gold);">🔁 Your renewal is ready</div>
+            <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:0.25rem;">Amount due: ${amountLabel}. We'll confirm on WhatsApp — pay to keep your supply going.</div>
+          </div>
+          <button id="cancel-renewal-btn" class="btn-action" style="background:transparent; border:1px solid var(--border-color); color:var(--text-secondary);" onclick="cancelAutoRenew(document.getElementById('verify-phone').value)">Cancel Auto-Renew</button>
+        </div>
+      `;
+      return;
+    }
+
+    const dateLabel = renewal.nextRenewalEstimate
+      ? new Date(renewal.nextRenewalEstimate).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })
+      : 'soon';
+
+    box.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:700; color:var(--accent-gold);">🔁 Auto-Renew: On</div>
+          <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:0.25rem;">Estimated next renewal: ${dateLabel}</div>
+        </div>
+        <button id="cancel-renewal-btn" class="btn-action" style="background:transparent; border:1px solid var(--border-color); color:var(--text-secondary);" onclick="cancelAutoRenew(document.getElementById('verify-phone').value)">Cancel Auto-Renew</button>
+      </div>
+    `;
+  }
+
   async function updateTrackerUI(phone) {
     const membership = await fetchMembership(phone);
     const count = membership.completedOrders;
@@ -789,6 +879,13 @@
       fill.style.width = `${pct}%`;
       countLbl.textContent = `${count} / 4 Orders to VIP`;
       titleLbl.textContent = 'Loyalty Progress';
+    }
+
+    try {
+      const renewal = await fetchRenewalStatus(phone);
+      renderRenewalStatus(renewal);
+    } catch (err) {
+      console.warn('Renewal status fetch failed:', err);
     }
   }
 
@@ -817,6 +914,7 @@
       const trainingDaysPerWeek = parseInt(document.getElementById('trainingDays')?.value || '4', 10);
       const location = document.getElementById('location').value.trim();
       const gym = document.getElementById('gym').value.trim();
+      const autoRenew = document.getElementById('autoRenew').checked;
 
       if (!phone) { alert('Please enter a valid M-Pesa phone number.'); return; }
       if (!Number.isFinite(weight) || weight < 30 || weight > 250) { alert('Please enter a valid weight.'); return; }
@@ -847,6 +945,7 @@
         total_sachets: totalSachets,
         location,
         gym,
+        auto_renew: autoRenew,
       };
 
       let quotePricing = null;
@@ -881,6 +980,7 @@
         <div class="summary-row"><span class="summary-label">Verified Orders</span><span class="summary-val">${completedOrders}</span></div>
         <div class="summary-row"><span class="summary-label">This Order</span><span class="summary-val">#${nextOrderNumber}</span></div>
         <div class="summary-row"><span class="summary-label">Location</span><span class="summary-val">${location}${gym ? ' (' + gym + ')' : ''}</span></div>
+        <div class="summary-row"><span class="summary-label">Auto-Renew</span><span class="summary-val">${autoRenew ? '🔁 On (cancel anytime)' : 'Off'}</span></div>
         ${quoteDiscountRowHtml}
         <div class="summary-row"><span class="summary-label">Final Price</span><span class="summary-val gold">${finalPriceDisplay}</span></div>
       `;
@@ -918,7 +1018,8 @@
             `Verified Orders: ${completedOrders}`,
             `Order Number: #${nextOrderNumber}`,
             `Total: ${formatKES(netTotal)}`,
-            `Location: ${location}${gym ? ', ' + gym : ''}`
+            `Location: ${location}${gym ? ', ' + gym : ''}`,
+            `Auto-Renew: ${autoRenew ? 'Yes — please message me to reorder when I run out' : 'No'}`
           ].join('\n');
 
           window.open(`https://wa.me/254115509593?text=${encodeURIComponent(msg)}`, '_blank');

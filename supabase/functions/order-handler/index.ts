@@ -307,6 +307,75 @@ function membershipPayload(eligibility: { streakCount: number; isVip: boolean; i
   };
 }
 
+async function getRenewalStatus(phone: string) {
+  const { data: latest, error } = await db
+    .from("orders")
+    .select("client_order_id, created_at, duration_days, plan_type, auto_renew, renewal_cancelled_at, renewed_at, status, net_amount, total_kes")
+    .eq("phone_number", phone)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`Renewal lookup failed: ${error.message}`);
+  if (!latest || !latest.auto_renew || latest.renewal_cancelled_at) {
+    return { active: false, nextRenewalEstimate: null, orderId: null, pendingPayment: false };
+  }
+
+  // If this latest row is itself an unpaid, auto-generated renewal order,
+  // the customer just needs to pay — no future date to show.
+  if (latest.status !== "paid") {
+    return {
+      active: true,
+      pendingPayment: true,
+      nextRenewalEstimate: null,
+      orderId: latest.client_order_id,
+      amountDue: latest.net_amount ?? latest.total_kes ?? null,
+    };
+  }
+
+  if (latest.renewed_at) {
+    // Already renewed into a follow-up order; that row (fetched above) will
+    // actually be the pending one once it exists, so this branch is mostly
+    // a safety net for any timing gap right around the cron run.
+    return { active: true, pendingPayment: true, nextRenewalEstimate: null, orderId: latest.client_order_id, amountDue: null };
+  }
+
+  const durationDays = latest.plan_type === "fast_saturation" ? 5 : (latest.duration_days ?? 0);
+  const createdAt = new Date(latest.created_at);
+  const nextRenewalEstimate = new Date(createdAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+  return {
+    active: true,
+    pendingPayment: false,
+    nextRenewalEstimate: nextRenewalEstimate.toISOString(),
+    orderId: latest.client_order_id,
+    amountDue: null,
+  };
+}
+
+async function cancelRenewal(phone: string) {
+  const { data: latest, error: lookupError } = await db
+    .from("orders")
+    .select("id, client_order_id, auto_renew, renewal_cancelled_at")
+    .eq("phone_number", phone)
+    .eq("auto_renew", true)
+    .is("renewal_cancelled_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lookupError) throw new Error(`Cancel lookup failed: ${lookupError.message}`);
+  if (!latest) return { cancelled: false };
+
+  const { error: updateError } = await db
+    .from("orders")
+    .update({ renewal_cancelled_at: new Date().toISOString() })
+    .eq("id", latest.id);
+
+  if (updateError) throw new Error(`Cancel update failed: ${updateError.message}`);
+  return { cancelled: true };
+}
+
 serve(async (req: Request) => {
   try {
     if (req.method === "OPTIONS") {
@@ -331,6 +400,26 @@ serve(async (req: Request) => {
         status: "membership",
         membership: membershipPayload(eligibility),
       }, 200);
+    }
+
+    if (body?.renewal_only === true) {
+      const phone = normalizePhone(body?.phone_number);
+      if (!PHONE_REGEX.test(phone)) {
+        return jsonResponse({ error: "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX." }, 400);
+      }
+
+      const renewal = await getRenewalStatus(phone);
+      return jsonResponse({ status: "renewal", renewal }, 200);
+    }
+
+    if (body?.cancel_renewal === true) {
+      const phone = normalizePhone(body?.phone_number);
+      if (!PHONE_REGEX.test(phone)) {
+        return jsonResponse({ error: "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX." }, 400);
+      }
+
+      const result = await cancelRenewal(phone);
+      return jsonResponse({ status: "cancelled", ...result }, 200);
     }
 
     const isQuote = body?.quote_only === true;
@@ -448,6 +537,8 @@ serve(async (req: Request) => {
       discount_applied: financials.discountApplied,
 
       is_milestone_reward: eligibility.isMilestone,
+      auto_renew: body.auto_renew === true,
+      renewal_cancelled_at: null,
     };
 
     const { data: insertedOrder, error: insertError } = await db
