@@ -13,6 +13,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 });
 const db = supabase.schema("v2");
 
+// Gates the admin-only order-listing endpoint (used by admin.html) — not
+// meant for public/client traffic. Set via `supabase secrets set`.
+const ADMIN_SECRET = Deno.env.get("ADMIN_SECRET") ?? "";
+
 const PHONE_REGEX = /^\+254[17]\d{8}$/;
 const IRONCLAD_TIER = "ironclad_vip";
 const LEAD_TIER = "lead";
@@ -27,16 +31,11 @@ const MYLAR_SMALL = 1095 / 800;
 const MYLAR_LARGE = 1095 / 400;
 const BASE_PROFIT = 22;
 
-const WEIGHT_CLASSES = [
-  { name: "A", min: 30, max: 50, sachetG: 3.0, bonusProfit: 0 },
-  { name: "B", min: 51, max: 67, sachetG: 4.5, bonusProfit: 2 },
-  { name: "C", min: 68, max: 80, sachetG: 6.0, bonusProfit: 4 },
-  { name: "D", min: 81, max: 100, sachetG: 7.5, bonusProfit: 6 },
-  { name: "E", min: 101, max: 250, sachetG: 9.0, bonusProfit: 8 },
-] as const;
-
-type WeightClass = (typeof WEIGHT_CLASSES)[number];
-type PlanType = "fast_saturation" | "daily_maintenance";
+// Weight is used ONLY to compute each client's personal saturation
+// threshold (see saturationThresholdGrams below) — it no longer determines
+// dose size or price. There is one product: a flat 3g sachet.
+const MIN_WEIGHT_KG = 30;
+const MAX_WEIGHT_KG = 250;
 
 function corsHeaders() {
   return {
@@ -67,16 +66,6 @@ function normalizePhone(raw: unknown): string {
   return typeof raw === "string" ? raw.trim() : "";
 }
 
-function normalizeWeightClass(raw: unknown): string {
-  if (typeof raw !== "string") return "";
-  const value = raw.trim().replace(/^Class\s*/i, "").trim().toUpperCase();
-  return value.length === 1 ? value : value.slice(-1);
-}
-
-function getWeightClass(weight: number): WeightClass | null {
-  return WEIGHT_CLASSES.find((item) => weight >= item.min && weight <= item.max) ?? null;
-}
-
 function getMylarCost(grams: number): number {
   return grams <= 4.5 ? MYLAR_SMALL : MYLAR_LARGE;
 }
@@ -85,12 +74,8 @@ function getSachetCost(grams: number): number {
   return round2(PPG * grams + getMylarCost(grams));
 }
 
-function getSachetPrice(grams: number, bonusProfit = 0): number {
-  return roundUpKES(getSachetCost(grams) + BASE_PROFIT + bonusProfit);
-}
-
-function isPlanType(value: unknown): value is PlanType {
-  return value === "fast_saturation" || value === "daily_maintenance";
+function getSachetPrice(grams: number): number {
+  return roundUpKES(getSachetCost(grams) + BASE_PROFIT);
 }
 
 function validatePayload(body: any, requireClientOrderId = true): string | null {
@@ -109,41 +94,18 @@ function validatePayload(body: any, requireClientOrderId = true): string | null 
     return "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX.";
   }
 
-  if (!isPlanType(body.plan_type)) {
-    return "plan_type must be fast_saturation or daily_maintenance.";
-  }
-
   const weight = Number(body.body_weight_kg);
-  if (!Number.isFinite(weight) || weight < 30 || weight > 250) {
-    return "body_weight_kg must be between 30 and 250 kg.";
+  if (!Number.isFinite(weight) || weight < MIN_WEIGHT_KG || weight > MAX_WEIGHT_KG) {
+    return `body_weight_kg must be between ${MIN_WEIGHT_KG} and ${MAX_WEIGHT_KG} kg.`;
   }
 
-  const suppliedWeightClass = normalizeWeightClass(body.weight_class_short ?? body.weight_class);
-  const computedWeightClass = getWeightClass(weight);
-  if (!computedWeightClass) {
-    return "Unsupported body weight.";
-  }
-
-  if (suppliedWeightClass && suppliedWeightClass !== computedWeightClass.name) {
-    return "weight_class does not match body_weight_kg.";
-  }
-
-  if (body.plan_type === "daily_maintenance") {
-    const duration = Number(body.duration_days);
-    const trainingDays = Number(body.training_days_per_week);
-
-    if (![7, 14, 21, 30].includes(duration)) {
-      return "duration_days must be 7, 14, 21, or 30 for daily maintenance.";
-    }
-
-    if (!Number.isInteger(trainingDays) || trainingDays < 1 || trainingDays > 7) {
-      return "training_days_per_week must be an integer from 1 to 7.";
-    }
-  }
-
-  if (body.plan_type === "fast_saturation") {
-    if (body.duration_days != null && Number(body.duration_days) !== 5) {
-      return "Fast saturation has a fixed duration of 5 days.";
+  // doses_per_day only matters for a NOT-yet-saturated client choosing a
+  // saturation-speed tier — validated against the live-generated menu
+  // server-side once we know their actual saturation status, not here.
+  if (body.doses_per_day != null) {
+    const doses = Number(body.doses_per_day);
+    if (!Number.isInteger(doses) || doses < 1 || doses > MAX_DOSES_PER_DAY) {
+      return `doses_per_day must be an integer from 1 to ${MAX_DOSES_PER_DAY}.`;
     }
   }
 
@@ -153,7 +115,6 @@ function validatePayload(body: any, requireClientOrderId = true): string | null 
 async function getOrCreateUser(profile: {
   phone: string;
   weight: number;
-  weightClass: string;
   location: string;
   gym: string;
 }) {
@@ -169,7 +130,6 @@ async function getOrCreateUser(profile: {
 
   const profileData = {
     body_weight_kg: profile.weight,
-    weight_class: profile.weightClass,
     location: profile.location || null,
     preferred_gym: profile.gym || null,
     updated_at: new Date().toISOString(),
@@ -236,44 +196,403 @@ async function getIroncladEligibility(phone: string) {
   return { streakCount: paidCount, isVip, isMilestone };
 }
 
-function calculateFinancials(args: {
-  planType: PlanType;
-  weightClass: WeightClass;
+async function isPaidOrConfirmedClient(phone: string): Promise<boolean> {
+  // Check if candidate referrer has at least 1 paid order
+  const { count: paidCount, error: paidError } = await db
+    .from("orders")
+    .select("*", { count: "exact", head: true })
+    .eq("phone_number", phone)
+    .eq("status", "paid");
+
+  if (!paidError && (paidCount ?? 0) > 0) return true;
+
+  // Or at least 1 order with confirmed delivery
+  const { count: confirmedCount, error: confirmedError } = await db
+    .from("orders")
+    .select("*", { count: "exact", head: true })
+    .eq("phone_number", phone)
+    .not("confirmed_at", "is", null);
+
+  if (!confirmedError && (confirmedCount ?? 0) > 0) return true;
+
+  return false;
+}
+
+// ----------------------------------------------------------
+// LIVE SATURATION STATUS
+//
+// Same decay model used in backfill_saturation.ts, but computed fresh
+// against RIGHT NOW instead of a frozen historical run. This is what
+// answers "where does this client's store actually stand today" for the
+// checkout flow, the streak lookup, and future dosing recommendations.
+//
+// Personalized in two places:
+//   - threshold(weight) — how much store this specific person needs
+//   - store_grams_at_last_order — this specific person's own last snapshot
+// The decay RATE itself (1.5%/day) is a fixed biological turnover
+// constant, not weight-dependent — it's applied to whatever store this
+// person actually has, which already scales the absolute grams/day lost.
+// ----------------------------------------------------------
+const DAILY_DECAY_RATE = 0.015;
+
+function saturationThresholdGrams(weightKg: number): number {
+  // T(W) = 84 * (W/70) — 84g calibrated to the 3g/day x 28 day literature
+  // anchor at the ~70kg reference weight most studies use.
+  return 84 * (weightKg / 70);
+}
+
+function decayStore(storeGrams: number, daysElapsed: number): number {
+  if (daysElapsed <= 0) return storeGrams;
+  return storeGrams * Math.pow(1 - DAILY_DECAY_RATE, daysElapsed);
+}
+
+function daysBetween(a: Date, b: Date): number {
+  return (b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24);
+}
+
+function addDays(d: Date, days: number): Date {
+  return new Date(d.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+// Simulates ONE order's consumption window day-by-day: decay happens every
+// day, and the order's grams are spread evenly across duration_days rather
+// than dumped in on a single date — matches gradual real-world consumption.
+// Mirrors backfill_saturation.ts exactly, so historical and live numbers
+// are computed the same way.
+function simulateOrderWindow(args: {
+  storeBefore: number;
+  storeAsOfDate: Date;
+  orderStart: Date;
   durationDays: number;
-  trainingDaysPerWeek: number | null;
+  totalGrams: number;
+  threshold: number;
+  simulateUpTo: Date;
+}): { store: number; asOfDate: Date; crossedThresholdAt: Date | null } {
+  const duration = Math.max(1, args.durationDays);
+  const dailyDose = args.totalGrams / duration;
+  const orderEnd = addDays(args.orderStart, duration);
+
+  const gapDays = daysBetween(args.storeAsOfDate, args.orderStart);
+  let store = gapDays > 0 ? decayStore(args.storeBefore, gapDays) : args.storeBefore;
+
+  const simEnd = args.simulateUpTo < orderEnd ? args.simulateUpTo : orderEnd;
+  const daysToSimulate = Math.max(0, Math.floor(daysBetween(args.orderStart, simEnd)));
+
+  let crossedThresholdAt: Date | null = null;
+  let cursor = args.orderStart;
+
+  for (let day = 0; day < daysToSimulate; day++) {
+    store = decayStore(store, 1) + dailyDose;
+    cursor = addDays(cursor, 1);
+    if (crossedThresholdAt === null && store >= args.threshold) {
+      crossedThresholdAt = cursor;
+    }
+  }
+
+  return { store, asOfDate: cursor, crossedThresholdAt };
+}
+
+// ----------------------------------------------------------
+// Data model contract (kept in sync with confirm_delivery, below):
+//   users.store_grams_at_last_order + store_reference_date = the store
+//   level at the moment the client's MOST RECENTLY CONFIRMED order
+//   STARTED (i.e., fully accounts for every order before that one, but
+//   not that order's own doses yet). confirm_delivery is the only thing
+//   that writes these two fields.
+//
+//   To get the LIVE current store, we take that baseline and simulate
+//   forward through the most recent confirmed order's own window, up to
+//   right now — handling both "still mid-batch" and "batch fully used,
+//   now just decaying" cases via simulateOrderWindow's simulateUpTo cap.
+// ----------------------------------------------------------
+async function getCurrentSaturationStatus(phone: string, weightOverrideKg?: number) {
+  const { data: userRow, error: userError } = await db
+    .from("users")
+    .select("body_weight_kg, store_grams_at_last_order, store_reference_date")
+    .eq("phone_number", phone)
+    .maybeSingle();
+
+  if (userError) throw new Error(`User lookup failed: ${userError.message}`);
+
+  const now = new Date();
+  // Always prefer the weight just submitted in this request — a client's
+  // weight can change, and a brand-new client has no stored weight at all.
+  // Falling back to the DB value (then 70kg) only covers calls with no
+  // fresher weight available.
+  const weightKg = weightOverrideKg ?? userRow?.body_weight_kg ?? 70;
+  const threshold = saturationThresholdGrams(weightKg);
+
+  if (!userRow) {
+    return {
+      isNewClient: true,
+      asOfDate: now.toISOString(),
+      lastConfirmedOrderDate: null,
+      thresholdGrams: round2(threshold),
+      currentStoreGrams: 0,
+      percentSaturated: 0,
+      isSaturated: false,
+    };
+  }
+
+  const { data: currentOrder, error: orderError } = await db
+    .from("orders")
+    .select("confirmed_at, duration_days, grams_delivered")
+    .eq("phone_number", phone)
+    .not("confirmed_at", "is", null)
+    .order("confirmed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (orderError) throw new Error(`Order lookup failed: ${orderError.message}`);
+
+  if (!currentOrder) {
+    return {
+      isNewClient: true,
+      asOfDate: now.toISOString(),
+      lastConfirmedOrderDate: null,
+      thresholdGrams: round2(threshold),
+      currentStoreGrams: 0,
+      percentSaturated: 0,
+      isSaturated: false,
+    };
+  }
+
+  const baseline = userRow.store_grams_at_last_order ?? 0;
+  const baselineDate = userRow.store_reference_date ? new Date(userRow.store_reference_date) : new Date(currentOrder.confirmed_at);
+  const orderStart = new Date(currentOrder.confirmed_at);
+  const durationDays = currentOrder.duration_days ?? 1;
+  const grams = currentOrder.grams_delivered ?? 0;
+
+  const result = simulateOrderWindow({
+    storeBefore: baseline,
+    storeAsOfDate: baselineDate,
+    orderStart,
+    durationDays,
+    totalGrams: grams,
+    threshold,
+    simulateUpTo: now,
+  });
+
+  const percentSaturated = Math.min(100, round2((result.store / threshold) * 100));
+
+  return {
+    isNewClient: false,
+    asOfDate: now.toISOString(),
+    lastConfirmedOrderDate: currentOrder.confirmed_at,
+    thresholdGrams: round2(threshold),
+    currentStoreGrams: round2(result.store),
+    percentSaturated,
+    isSaturated: result.store >= threshold,
+  };
+}
+
+// ----------------------------------------------------------
+// confirm_delivery — marks an order as physically delivered (which can
+// happen before payment lands) and establishes the store baseline this
+// order's own consumption window will build from.
+//
+// Important: this does NOT add the order's grams immediately. It only
+// decays the client's existing baseline forward to right now (the moment
+// delivery happened) and records that as the new reference point. The
+// order's own doses accrue lazily, day by day, whenever
+// getCurrentSaturationStatus is next called for this client — it looks up
+// this same order (by confirmed_at) and simulates forward from here.
+// ----------------------------------------------------------
+async function confirmDelivery(clientOrderId: string) {
+  const { data: order, error: orderError } = await db
+    .from("orders")
+    .select("id, phone_number, created_at, confirmed_at, grams_delivered")
+    .eq("client_order_id", clientOrderId)
+    .maybeSingle();
+
+  if (orderError) throw new Error(`Order lookup failed: ${orderError.message}`);
+  if (!order) return { confirmed: false, reason: "Order not found." };
+  if (order.confirmed_at) {
+    return { confirmed: false, reason: "Order was already confirmed.", confirmedAt: order.confirmed_at };
+  }
+
+  const now = new Date();
+
+  const { data: userRow, error: userError } = await db
+    .from("users")
+    .select("id, store_grams_at_last_order, store_reference_date, cumulative_grams_delivered")
+    .eq("phone_number", order.phone_number)
+    .maybeSingle();
+
+  if (userError) throw new Error(`User lookup failed: ${userError.message}`);
+  if (!userRow) throw new Error(`No users row found for phone ${order.phone_number}.`);
+
+  const priorBaseline = userRow.store_grams_at_last_order ?? 0;
+  const priorReferenceDate = userRow.store_reference_date ? new Date(userRow.store_reference_date) : now;
+  const gapDays = daysBetween(priorReferenceDate, now);
+  const newBaseline = gapDays > 0 ? decayStore(priorBaseline, gapDays) : priorBaseline;
+
+  const { error: updateOrderError } = await db
+    .from("orders")
+    .update({ confirmed_at: now.toISOString() })
+    .eq("id", order.id);
+  if (updateOrderError) throw new Error(`Order update failed: ${updateOrderError.message}`);
+
+  const { error: updateUserError } = await db
+    .from("users")
+    .update({
+      store_grams_at_last_order: round2(newBaseline),
+      store_reference_date: now.toISOString(),
+      cumulative_grams_delivered: round2((userRow.cumulative_grams_delivered ?? 0) + (order.grams_delivered ?? 0)),
+    })
+    .eq("id", userRow.id);
+  if (updateUserError) throw new Error(`User update failed: ${updateUserError.message}`);
+
+  // Referral credit: only fires when this is NOT the client's first-ever
+  // order (their FIRST order is the only one that ever carries
+  // referred_by_phone), and only once per order (guarded by the
+  // confirmed_at check above — this function never runs twice on one order).
+  let referralCredited = false;
+  const { data: firstOrder, error: firstOrderError } = await db
+    .from("orders")
+    .select("id, referred_by_phone")
+    .eq("phone_number", order.phone_number)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!firstOrderError && firstOrder && firstOrder.id !== order.id && firstOrder.referred_by_phone) {
+    const referrerPhone = firstOrder.referred_by_phone;
+    const { data: referrerRow, error: referrerError } = await db
+      .from("users")
+      .select("id, referral_credits")
+      .eq("phone_number", referrerPhone)
+      .maybeSingle();
+
+    if (!referrerError && referrerRow) {
+      const { error: creditError } = await db
+        .from("users")
+        .update({ referral_credits: (referrerRow.referral_credits ?? 0) + 1 })
+        .eq("id", referrerRow.id);
+
+      if (!creditError) {
+        await db.from("orders").update({ referral_credit_awarded: true }).eq("id", order.id);
+        referralCredited = true;
+      }
+    }
+  }
+
+  return {
+    confirmed: true,
+    confirmedAt: now.toISOString(),
+    baselineStoreGrams: round2(newBaseline),
+    referralCredited,
+  };
+}
+
+// ----------------------------------------------------------
+// PRICING & TIER ENGINE
+//
+// One product only: a 3g sachet. Personalization lives entirely in
+// FREQUENCY (doses/day) and TIMELINE (days to saturate), computed fresh
+// per client from their weight and live saturation status — never in
+// dose size. See /areas/pumping-iron.md for the full derivation.
+// ----------------------------------------------------------
+const FLAT_SACHET_GRAMS = 3.0;
+const FLAT_SACHET_PRICE = getSachetPrice(FLAT_SACHET_GRAMS); // ~46 KES
+const MAX_DOSES_PER_DAY = 7;
+const MAX_SATURATION_DAYS = 28; // 4-week ceiling
+const MAINTENANCE_BATCH_DAYS = 14;
+const WEEKLY_BATCH_DAYS = 7;
+const MIN_BATCH_SACHETS = 5; // a batch must exceed this — never an awkwardly tiny delivery
+const BATCHING_ELIGIBLE_MIN_DAYS = 14; // only offer weekly batching for 2+ week plans
+
+// price(n) = 46 - 9*(n-1)/n — approaches but can never reach/exceed a
+// 9 KES/sachet discount, at any dose frequency, by construction.
+function priceForNthDose(n: number): number {
+  return round2(FLAT_SACHET_PRICE - 9 * ((n - 1) / n));
+}
+
+function dailyCostForDoses(dosesPerDay: number): number {
+  let total = 0;
+  for (let n = 1; n <= dosesPerDay; n++) total += priceForNthDose(n);
+  return round2(total);
+}
+
+// Menu for a NOT-YET-saturated client: every doses/day option that clears
+// their personal saturation window within the 4-week cap. No dilution —
+// every dose is a full 3g sachet; only frequency changes.
+function generateSaturationTierMenu(remainingGrams: number) {
+  const tiers: Array<{
+    dosesPerDay: number;
+    daysToSaturate: number;
+    dailyCost: number;
+    totalCost: number;
+    totalSachets: number;
+  }> = [];
+
+  for (let n = 1; n <= MAX_DOSES_PER_DAY; n++) {
+    const gramsPerDay = n * FLAT_SACHET_GRAMS;
+    const daysToSaturate = Math.max(1, Math.ceil(remainingGrams / gramsPerDay));
+    if (daysToSaturate > MAX_SATURATION_DAYS) continue; // doesn't clear the 4-week cap — not offered
+
+    const dailyCost = dailyCostForDoses(n);
+    tiers.push({
+      dosesPerDay: n,
+      daysToSaturate,
+      dailyCost,
+      totalCost: round2(dailyCost * daysToSaturate),
+      totalSachets: n * daysToSaturate,
+    });
+  }
+
+  return tiers;
+}
+
+function calculateOrderFinancials(args: {
+  isSaturated: boolean;
+  remainingGrams: number;
+  requestedDosesPerDay?: number;
+  batchWeekly?: boolean;
   isVip: boolean;
   isMilestone: boolean;
 }) {
+  let dosesPerDay: number;
+  let durationDays: number;
   let grossAmount: number;
-  let totalSachets: number;
-  let trainingSachetDays = 0;
-  let restSachetDays = 0;
+  let naturalDurationDays: number | null = null;
+  let isBatched = false;
 
-  if (args.planType === "fast_saturation") {
-    totalSachets = 20;
-    const sachetPrice = getSachetPrice(args.weightClass.sachetG, args.weightClass.bonusProfit);
-    grossAmount = round2(sachetPrice * totalSachets);
+  if (args.isSaturated) {
+    // Maintenance: fixed, no speed tiers offered — more than 1/day does
+    // nothing extra once saturated, so we never sell it.
+    dosesPerDay = 1;
+    durationDays = MAINTENANCE_BATCH_DAYS;
+    grossAmount = round2(dailyCostForDoses(1) * durationDays);
   } else {
-    if (!args.trainingDaysPerWeek || !Number.isInteger(args.trainingDaysPerWeek)) {
-      throw new Error("Invalid training_days_per_week.");
+    const menu = generateSaturationTierMenu(args.remainingGrams);
+    const chosen = menu.find((t) => t.dosesPerDay === args.requestedDosesPerDay) ?? menu[0];
+    if (!chosen) {
+      throw new Error("No valid saturation tier available for this weight — remaining grams too high even at max frequency.");
+    }
+    dosesPerDay = chosen.dosesPerDay;
+    naturalDurationDays = chosen.daysToSaturate;
+
+    // Weekly batching only makes sense for a 2+ week plan — anything
+    // shorter is already close to one batch anyway.
+    if (args.batchWeekly && chosen.daysToSaturate >= BATCHING_ELIGIBLE_MIN_DAYS) {
+      const cappedDuration = Math.min(WEEKLY_BATCH_DAYS, chosen.daysToSaturate);
+      // Never create an awkwardly tiny first batch — if capping at 7 days
+      // would produce 5 sachets or fewer, just deliver the full plan instead.
+      durationDays = (dosesPerDay * cappedDuration) <= MIN_BATCH_SACHETS ? chosen.daysToSaturate : cappedDuration;
+      isBatched = durationDays < chosen.daysToSaturate;
+    } else {
+      durationDays = chosen.daysToSaturate;
     }
 
-    const totalDays = args.durationDays;
-    trainingSachetDays = Math.round((args.trainingDaysPerWeek / 7) * totalDays);
-    restSachetDays = totalDays - trainingSachetDays;
-    totalSachets = trainingSachetDays + restSachetDays;
-
-    const trainingSachetPrice = getSachetPrice(args.weightClass.sachetG, args.weightClass.bonusProfit) + 5;
-    const restSachetPrice = getSachetPrice(3.0, 0);
-
-    const trainingSubtotal = round2(trainingSachetDays * trainingSachetPrice);
-    const restSubtotal = round2(restSachetDays * restSachetPrice);
-    grossAmount = round2(trainingSubtotal + restSubtotal);
+    grossAmount = round2(dailyCostForDoses(dosesPerDay) * durationDays);
   }
+
+  const totalSachets = dosesPerDay * durationDays;
+  const gramsDelivered = round2(totalSachets * FLAT_SACHET_GRAMS);
 
   let discountRate = 0;
   let discountApplied = "NONE";
-
   if (args.isMilestone) {
     discountRate = MILESTONE_DISCOUNT_RATE;
     discountApplied = "MILESTONE_30";
@@ -286,14 +605,17 @@ function calculateFinancials(args: {
   const netAmount = round2(grossAmount - discountAmount);
 
   return {
+    dosesPerDay,
+    durationDays,
+    totalSachets,
+    gramsDelivered,
     grossAmount,
     discountAmount,
     netAmount,
     discountApplied,
     discountRate,
-    totalSachets,
-    trainingSachetDays,
-    restSachetDays,
+    naturalDurationDays,
+    isBatched,
   };
 }
 
@@ -340,7 +662,7 @@ async function getRenewalStatus(phone: string) {
     return { active: true, pendingPayment: true, nextRenewalEstimate: null, orderId: latest.client_order_id, amountDue: null };
   }
 
-  const durationDays = latest.plan_type === "fast_saturation" ? 5 : (latest.duration_days ?? 0);
+  const durationDays = latest.duration_days ?? 0;
   const createdAt = new Date(latest.created_at);
   const nextRenewalEstimate = new Date(createdAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
@@ -402,6 +724,16 @@ serve(async (req: Request) => {
       }, 200);
     }
 
+    if (body?.saturation_status === true) {
+      const phone = normalizePhone(body?.phone_number);
+      if (!PHONE_REGEX.test(phone)) {
+        return jsonResponse({ error: "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX." }, 400);
+      }
+
+      const saturation = await getCurrentSaturationStatus(phone);
+      return jsonResponse({ status: "saturation", saturation }, 200);
+    }
+
     if (body?.renewal_only === true) {
       const phone = normalizePhone(body?.phone_number);
       if (!PHONE_REGEX.test(phone)) {
@@ -422,6 +754,91 @@ serve(async (req: Request) => {
       return jsonResponse({ status: "cancelled", ...result }, 200);
     }
 
+    if (body?.confirm_delivery === true) {
+      const clientOrderId = typeof body?.client_order_id === "string" ? body.client_order_id.trim() : "";
+      if (!clientOrderId) {
+        return jsonResponse({ error: "client_order_id is required to confirm delivery." }, 400);
+      }
+
+      const result = await confirmDelivery(clientOrderId);
+      return jsonResponse({ status: "delivery_confirmation", ...result }, result.confirmed ? 200 : 409);
+    }
+
+    if (body?.referral_status === true) {
+      const phone = normalizePhone(body?.phone_number);
+      if (!PHONE_REGEX.test(phone)) {
+        return jsonResponse({ error: "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX." }, 400);
+      }
+
+      const { data: userRow, error: userError } = await db
+        .from("users")
+        .select("referral_credits")
+        .eq("phone_number", phone)
+        .maybeSingle();
+
+      if (userError) {
+        return jsonResponse({ error: "Referral lookup failed.", details: userError.message }, 500);
+      }
+
+      return jsonResponse({
+        status: "referral",
+        referral: {
+          phone,
+          credits: userRow?.referral_credits ?? 0,
+        },
+      }, 200);
+    }
+
+    if (body?.validate_referrer === true) {
+      const phone = normalizePhone(body?.phone_number);
+      const clientPhone = normalizePhone(body?.client_phone);
+
+      if (!phone || !PHONE_REGEX.test(phone)) {
+        return jsonResponse({
+          status: "referrer_validation",
+          valid: false,
+          error: "Please enter a valid phone number.",
+        }, 200);
+      }
+
+      if (clientPhone && phone === clientPhone) {
+        return jsonResponse({
+          status: "referrer_validation",
+          valid: false,
+          error: "You cannot refer yourself.",
+        }, 200);
+      }
+
+      const isEligible = await isPaidOrConfirmedClient(phone);
+      return jsonResponse({
+        status: "referrer_validation",
+        valid: isEligible,
+        phone,
+        message: isEligible
+          ? "Existing client with paid or confirmed order verified"
+          : "Candidate referrer must have at least 1 paid or confirmed order.",
+      }, 200);
+    }
+
+    if (body?.list_pending_orders === true) {
+      if (!ADMIN_SECRET || body?.admin_secret !== ADMIN_SECRET) {
+        return jsonResponse({ error: "Unauthorized." }, 401);
+      }
+
+      const { data: pending, error: pendingError } = await db
+        .from("orders")
+        .select("client_order_id, phone_number, plan_name, duration_days, total_sachets, net_amount, location, gym, created_at, auto_renew")
+        .is("confirmed_at", null)
+        .order("created_at", { ascending: true })
+        .limit(100);
+
+      if (pendingError) {
+        return jsonResponse({ error: "Failed to list pending orders.", details: pendingError.message }, 500);
+      }
+
+      return jsonResponse({ status: "pending_orders", orders: pending ?? [] }, 200);
+    }
+
     const isQuote = body?.quote_only === true;
     const validationError = validatePayload(body, !isQuote);
 
@@ -431,40 +848,84 @@ serve(async (req: Request) => {
 
     const phone = normalizePhone(body.phone_number);
     const weight = Number(body.body_weight_kg);
-    const weightClass = getWeightClass(weight);
-    if (!weightClass) {
-      return jsonResponse({ error: "Unsupported body weight." }, 400);
-    }
 
-    const suppliedClass = normalizeWeightClass(body.weight_class_short ?? body.weight_class);
-    if (suppliedClass && suppliedClass !== weightClass.name) {
-      return jsonResponse({ error: "weight_class does not match body_weight_kg." }, 400);
-    }
-
-    const planType = body.plan_type as PlanType;
-    const durationDays = planType === "fast_saturation" ? 5 : Number(body.duration_days);
-    const trainingDaysPerWeek = planType === "fast_saturation" ? null : Number(body.training_days_per_week);
+    const eligibility = await getIroncladEligibility(phone);
+    const saturation = await getCurrentSaturationStatus(phone, weight);
+    const remainingGrams = Math.max(0, saturation.thresholdGrams - saturation.currentStoreGrams);
+    const requestedDosesPerDay = body.doses_per_day != null ? Number(body.doses_per_day) : undefined;
+    const batchWeekly = body.batch_weekly === true;
 
     if (isQuote) {
-      const eligibility = await getIroncladEligibility(phone);
-      const financials = calculateFinancials({
-        planType,
-        weightClass,
-        durationDays,
-        trainingDaysPerWeek,
-        isVip: eligibility.isVip,
-        isMilestone: eligibility.isMilestone,
-      });
+      if (saturation.isSaturated) {
+        const financials = calculateOrderFinancials({
+          isSaturated: true,
+          remainingGrams: 0,
+          isVip: eligibility.isVip,
+          isMilestone: eligibility.isMilestone,
+        });
+        return jsonResponse({
+          status: "quote",
+          membership: membershipPayload(eligibility),
+          saturation,
+          maintenance_plan: {
+            doses_per_day: financials.dosesPerDay,
+            duration_days: financials.durationDays,
+            gross_amount: financials.grossAmount,
+            discount_amount: financials.discountAmount,
+            net_amount: financials.netAmount,
+            discount_applied: financials.discountApplied,
+            note: "You're saturated — 1 sachet/day maintains it. An occasional lighter week won't cost you results.",
+          },
+        }, 200);
+      }
 
-      return jsonResponse({
-        status: "quote",
-        membership: membershipPayload(eligibility),
-        pricing: {
+      const menu = generateSaturationTierMenu(remainingGrams);
+      if (menu.length === 0) {
+        return jsonResponse({
+          status: "quote",
+          membership: membershipPayload(eligibility),
+          saturation,
+          tier_menu: [],
+          error: `No saturation tier reaches your target within ${MAX_SATURATION_DAYS} days even at max frequency — this weight needs a longer window than we currently offer.`,
+        }, 200);
+      }
+
+      let selectedTier = null;
+      if (requestedDosesPerDay != null) {
+        const financials = calculateOrderFinancials({
+          isSaturated: false,
+          remainingGrams,
+          requestedDosesPerDay,
+          batchWeekly,
+          isVip: eligibility.isVip,
+          isMilestone: eligibility.isMilestone,
+        });
+        selectedTier = {
+          doses_per_day: financials.dosesPerDay,
+          duration_days: financials.durationDays,
           gross_amount: financials.grossAmount,
           discount_amount: financials.discountAmount,
           net_amount: financials.netAmount,
           discount_applied: financials.discountApplied,
-        },
+          natural_duration_days: financials.naturalDurationDays,
+          is_batched: financials.isBatched,
+          batching_eligible: financials.naturalDurationDays != null && financials.naturalDurationDays >= BATCHING_ELIGIBLE_MIN_DAYS,
+        };
+      }
+
+      return jsonResponse({
+        status: "quote",
+        membership: membershipPayload(eligibility),
+        saturation,
+        tier_menu: menu.map((t) => ({
+          doses_per_day: t.dosesPerDay,
+          days_to_saturate: t.daysToSaturate,
+          daily_cost: t.dailyCost,
+          total_cost: t.totalCost,
+          total_sachets: t.totalSachets,
+          batching_eligible: t.daysToSaturate >= BATCHING_ELIGIBLE_MIN_DAYS,
+        })),
+        selected_tier: selectedTier,
       }, 200);
     }
 
@@ -492,40 +953,79 @@ serve(async (req: Request) => {
       }, 200);
     }
 
+    if (!saturation.isSaturated && requestedDosesPerDay == null) {
+      return jsonResponse({ error: "doses_per_day is required to place a saturation-phase order." }, 400);
+    }
+
+    let financials;
+    try {
+      financials = calculateOrderFinancials({
+        isSaturated: saturation.isSaturated,
+        remainingGrams,
+        requestedDosesPerDay,
+        batchWeekly,
+        isVip: eligibility.isVip,
+        isMilestone: eligibility.isMilestone,
+      });
+    } catch (err) {
+      return jsonResponse({ error: err instanceof Error ? err.message : "Invalid tier selection." }, 400);
+    }
+
+    // Batching only works if auto-renew is on — that's what carries the
+    // remaining weekly batches forward. If the client picked batching but
+    // left auto-renew off, batching wins (it's the more explicit choice).
+    const autoRenew = financials.isBatched ? true : body.auto_renew === true;
+
     const userId = await getOrCreateUser({
       phone,
       weight,
-      weightClass: weightClass.name,
       location: typeof body.location === "string" ? body.location.trim() : "",
       gym: typeof body.gym === "string" ? body.gym.trim() : "",
     });
 
-    const eligibility = await getIroncladEligibility(phone);
+    // Referral tagging: only on a client's very first order ever, and only
+    // once — never overwritten on later orders.
+    const { count: priorOrderCount } = await db
+      .from("orders")
+      .select("*", { count: "exact", head: true })
+      .eq("phone_number", phone);
+    const isFirstOrderEver = (priorOrderCount ?? 0) === 0;
 
-    const financials = calculateFinancials({
-      planType,
-      weightClass,
-      durationDays,
-      trainingDaysPerWeek,
-      isVip: eligibility.isVip,
-      isMilestone: eligibility.isMilestone,
-    });
+    let referredByPhone: string | null = null;
+    if (isFirstOrderEver && typeof body.referred_by_phone === "string" && body.referred_by_phone.trim()) {
+      const candidateReferrer = normalizePhone(body.referred_by_phone);
+      if (!candidateReferrer || !PHONE_REGEX.test(candidateReferrer)) {
+        return jsonResponse({ error: "Invalid referred_by_phone format." }, 400);
+      }
+      if (candidateReferrer === phone) {
+        return jsonResponse({ error: "You cannot refer yourself." }, 400);
+      }
 
-    const planName = planType === "fast_saturation" ? "Fast Saturation (5 Days)" : "Daily Maintenance";
+      const isEligible = await isPaidOrConfirmedClient(candidateReferrer);
+      if (!isEligible) {
+        return jsonResponse({
+          error: "The referred-by number must belong to an existing client with at least 1 paid or confirmed order.",
+        }, 400);
+      }
+
+      referredByPhone = candidateReferrer;
+    }
+
+    const planName = saturation.isSaturated
+      ? "Maintenance (1x/day)"
+      : financials.isBatched
+      ? `Saturation Plan (${financials.dosesPerDay}x/day, weekly batch)`
+      : `Saturation Plan (${financials.dosesPerDay}x/day)`;
 
     const orderPayload = {
       client_order_id: clientOrderId,
       user_id: userId,
       phone_number: phone,
-      plan_type: planType,
+      plan_type: saturation.isSaturated ? "maintenance" : "saturation",
       plan_name: planName,
-      weight_class: weightClass.name,
       body_weight_kg: weight,
-      duration_days: durationDays,
-      training_days_per_week: trainingDaysPerWeek,
+      duration_days: financials.durationDays,
       total_sachets: financials.totalSachets,
-      training_sachet_days: financials.trainingSachetDays,
-      rest_sachet_days: financials.restSachetDays,
       location: typeof body.location === "string" ? body.location.trim() : "",
       gym: typeof body.gym === "string" ? body.gym.trim() : "",
       message: typeof body.message === "string" ? body.message.trim() : "",
@@ -537,8 +1037,10 @@ serve(async (req: Request) => {
       discount_applied: financials.discountApplied,
 
       is_milestone_reward: eligibility.isMilestone,
-      auto_renew: body.auto_renew === true,
+      auto_renew: autoRenew,
       renewal_cancelled_at: null,
+      grams_delivered: financials.gramsDelivered,
+      referred_by_phone: referredByPhone,
     };
 
     const { data: insertedOrder, error: insertError } = await db

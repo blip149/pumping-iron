@@ -371,6 +371,14 @@
   .summary-val { font-weight: 700; text-align: right; }
   .summary-val.gold { color: var(--accent-gold); font-size: 1.2rem; }
 
+  .tier-row {
+    border-radius: var(--radius-sm);
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    transition: background 0.15s ease;
+  }
+  .tier-row:hover { background: rgba(255, 184, 0, 0.06); }
+
   .discount-banner {
     margin-top: 1rem;
     padding: 1rem;
@@ -509,7 +517,7 @@
       <h1 class="hero-title">Order 4 Times consecutively.<br><span>Get Free VIP Membership.</span></h1>
       <p class="hero-subtitle">We source Creatine Monohydrate from trusted suppliers and deliver pre-portioned to your precise body weight.</p>
       <div style="margin-top:1.5rem; display:flex; flex-wrap:wrap; gap:0.8rem;">
-        <a href="#calculator" class="nav-btn" style="text-decoration:none; padding:0.9rem 1.5rem; font-size:1rem; border-radius: var(--radius-md);">Order now</a>
+        <a href="#calculator" class="nav-btn" style="text-decoration:none; padding:0.9rem 1.5rem; font-size:1rem; border-radius: var(--radius-md);">Configure Your Plan</a>
         <a href="membership.html" class="btn-action" style="text-decoration:none;">Learn More About Ironclad Membership</a>
       </div>
     </div>
@@ -519,8 +527,8 @@
 <section class="calc-section" id="calculator">
   <div class="container">
     <div class="section-title-wrap">
-      <span class="badge badge-red">Precision Dosing</span>
-      <h2 class="section-title">Configure Your Plan</h2>
+      <span class="badge badge-red">Zero Guesswork</span>
+      <h2 class="section-title">We'll Take It From Here</h2>
     </div>
 
     <div class="wizard-card">
@@ -536,39 +544,6 @@
         </div>
 
         <div>
-          <label for="goal">Your Goal</label>
-          <select id="goal" class="form-control" onchange="toggleGoalFields()" required>
-            <option value="">Select Phase</option>
-            <option value="loading">Fast Saturation (5 Days)</option>
-            <option value="maintenance">Daily Maintenance</option>
-          </select>
-        </div>
-
-        <div id="duration-group" style="display: none;">
-          <label for="duration">Duration</label>
-          <select id="duration" class="form-control">
-            <option value="">Select Duration</option>
-            <option value="7">1 Week</option>
-            <option value="14">2 Weeks</option>
-            <option value="21">3 Weeks</option>
-            <option value="30">1 Month</option>
-          </select>
-        </div>
-
-        <div id="training-group" style="display: none;">
-          <label for="trainingDays">Training Days / Week</label>
-          <select id="trainingDays" class="form-control">
-            <option value="4" selected>4 Days a Week</option>
-            <option value="1">1 Day</option>
-            <option value="2">2 Days</option>
-            <option value="3">3 Days</option>
-            <option value="5">5 Days</option>
-            <option value="6">6 Days</option>
-            <option value="7">7 Days</option>
-          </select>
-        </div>
-
-        <div>
           <label for="location">Area (Kiambu County)</label>
           <input type="text" id="location" class="form-control" placeholder="e.g. Kiambu Town, Ruiru" required>
         </div>
@@ -578,17 +553,38 @@
           <input type="text" id="gym" class="form-control" placeholder="e.g. Gym Name / Landmark">
         </div>
 
+        <div class="full-width">
+          <label for="referredBy">Referred By (optional)</label>
+          <input type="tel" id="referredBy" class="form-control" placeholder="Friend's M-Pesa number, if they referred you" onblur="validateReferrerInput()" oninput="clearReferrerFeedback()">
+          <div id="referred-by-feedback" style="font-size: 0.8rem; margin-top: 0.35rem; display: none;"></div>
+        </div>
+
         <div class="full-width" style="display:flex; align-items:flex-start; gap:0.6rem; margin-top:0.25rem;">
-          <input type="checkbox" id="autoRenew" style="width:18px; height:18px; margin-top:0.15rem; accent-color: var(--accent-gold);">
+          <input type="checkbox" id="autoRenew" checked style="width:18px; height:18px; margin-top:0.15rem; accent-color: var(--accent-gold);">
           <label for="autoRenew" style="text-transform:none; letter-spacing:normal; font-size:0.85rem; color:var(--text-secondary); margin-bottom:0;">
-            🔁 Auto-renew this plan  — cancel anytime.
+            🔁 Auto-renew when this runs out. We'll message you on WhatsApp to reorder — cancel anytime from the lookup below.
           </label>
         </div>
       </div>
 
-      <button class="btn-submit" onclick="calculatePlan()">CALCULATE & CONFIRM PLAN</button>
+      <button class="btn-submit" onclick="checkMyPlan()">SEE MY PLAN</button>
 
-      <!-- ORDER SUMMARY -->
+      <!-- SATURATION TIER TABLE (new/building clients) -->
+      <div class="result-box" id="tier-box">
+        <h4 style="font-family: var(--font-heading); margin-bottom: 0.5rem; color: var(--text-primary);">Choose Your Pace</h4>
+        <p id="tier-subtitle" style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1rem;"></p>
+        <div id="tier-table"></div>
+        <div id="batching-choice" style="display:none; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-color);"></div>
+      </div>
+
+      <!-- MAINTENANCE PLAN (already-saturated clients) -->
+      <div class="result-box" id="maintenance-box">
+        <h4 style="font-family: var(--font-heading); margin-bottom: 0.5rem; color: var(--text-primary);">👑 You're Saturated</h4>
+        <p id="maintenance-note" style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1rem;"></p>
+        <div id="maintenance-summary"></div>
+      </div>
+
+      <!-- ORDER SUMMARY (shown after a tier/plan is chosen) -->
       <div class="result-box" id="result-box">
         <h4 style="font-family: var(--font-heading); margin-bottom: 1rem; color: var(--text-primary); border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;" id="plan-title">YOUR PLAN SUMMARY</h4>
         <div id="summary-rows"></div>
@@ -635,7 +631,18 @@
         </div>
       </div>
 
+      <div class="progress-container" style="margin-top: 1.25rem;">
+        <div class="progress-label">
+          <span>Creatine Muscle Store Level</span>
+          <span id="store-level-percent" style="font-weight: 700; color: var(--accent-gold);">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="store-level-progress"></div>
+        </div>
+      </div>
+
       <div id="renewal-status" style="display:none; margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--border-color);"></div>
+      <div id="referral-status" style="display:none; margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--border-color);"></div>
     </div>
   </div>
 </section>
@@ -677,14 +684,6 @@
   const SUPABASE_ANON_KEY = 'sb_publishable_AFavS_mQZhcxvwlAFx_B3g_k2MpkT8b';
   const EDGE_ORDER_HANDLER_URL = 'https://zhdpiscqxaowjrfidfis.functions.supabase.co/order-handler';
 
-  const WEIGHT_CLASSES = [
-    { name: 'A', min: 30,  max: 50,  label: '30–50kg',  sachetG: 3.0 },
-    { name: 'B', min: 51,  max: 67,  label: '51–67kg',  sachetG: 4.5 },
-    { name: 'C', min: 68,  max: 80,  label: '68–80kg',  sachetG: 6.0 },
-    { name: 'D', min: 81,  max: 100, label: '81–100kg', sachetG: 7.5 },
-    { name: 'E', min: 101, max: 250, label: '101kg+',   sachetG: 9.0 },
-  ];
-
   function showDebug(msg, level = 'error', ttl = 15000) {
     let el = document.getElementById('debug-banner');
     if (!el) {
@@ -700,10 +699,6 @@
 
   function formatKES(n) {
     return 'KSh ' + new Intl.NumberFormat('en-KE').format(Math.round(n));
-  }
-
-  function getWeightClass(kg) {
-    return WEIGHT_CLASSES.find(c => kg >= c.min && kg <= c.max);
   }
 
   function generateUUID() {
@@ -766,6 +761,18 @@
     const isMilestone = isMember && (vipOrderNum % 4 === 0);
 
     return { completedOrders, tier: isMember ? 'vip' : 'standard', isMember, nextOrderNumber, isMilestone };
+  }
+
+  async function fetchSaturationStatus(phone) {
+    const cleanPhone = normalizePhone(phone);
+    if (!cleanPhone) throw new Error('Please enter a valid M-Pesa phone number.');
+
+    const json = await callOrderHandler({
+      saturation_status: true,
+      phone_number: cleanPhone,
+    });
+
+    return json?.saturation || { isSaturated: false, isNewClient: true, percentSaturated: 0 };
   }
 
   async function lookupMemberPhone() {
@@ -882,165 +889,468 @@
     }
 
     try {
+      const saturation = await fetchSaturationStatus(phone);
+      const storePct = Math.min(100, Math.max(0, Math.round(saturation?.percentSaturated || 0)));
+      const storeFill = document.getElementById('store-level-progress');
+      const storePctEl = document.getElementById('store-level-percent');
+      if (storeFill) storeFill.style.width = `${storePct}%`;
+      if (storePctEl) storePctEl.textContent = `${storePct}%`;
+    } catch (err) {
+      console.warn('Saturation status fetch failed:', err);
+    }
+
+    try {
       const renewal = await fetchRenewalStatus(phone);
       renderRenewalStatus(renewal);
     } catch (err) {
       console.warn('Renewal status fetch failed:', err);
     }
+
+    try {
+      const referral = await fetchReferralStatus(phone);
+      renderReferralStatus(phone, referral);
+    } catch (err) {
+      console.warn('Referral status fetch failed:', err);
+    }
   }
 
-  function toggleGoalFields() {
-    const goal = document.getElementById('goal').value;
-    document.getElementById('duration-group').style.display = goal === 'maintenance' ? 'block' : 'none';
-    document.getElementById('training-group').style.display = goal === 'maintenance' ? 'block' : 'none';
+  async function fetchReferralStatus(phone) {
+    const cleanPhone = normalizePhone(phone);
+    if (!cleanPhone) return { credits: 0 };
+    const json = await callOrderHandler({ referral_status: true, phone_number: cleanPhone });
+    return json?.referral || { credits: 0 };
   }
 
-  async function fetchQuote(orderPayload) {
-    const json = await callOrderHandler({ ...orderPayload, quote_only: true });
-    if (!json?.pricing) throw new Error('Quote did not return pricing.');
-    return json.pricing;
+  function renderReferralStatus(phone, referral) {
+    const box = document.getElementById('referral-status');
+    const credits = referral.credits || 0;
+
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div style="font-weight:700; color:var(--accent-gold); margin-bottom:0.4rem;">\ud83c\udf81 Referral Credits: ${credits}</div>
+      <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.75rem;">
+        Share your number (${phone}) with a friend \u2014 when they order and come back for a second batch, you get a free sachet.
+      </div>
+      ${credits > 0 ? `<button class="btn-action" onclick="claimReferralCredits('${phone}', ${credits})">Claim ${credits} Free Sachet${credits > 1 ? 's' : ''}</button>` : ''}
+    `;
   }
 
-  async function calculatePlan() {
+  function claimReferralCredits(phone, credits) {
+    const msg = `Hi! I'd like to claim my ${credits} referral credit${credits > 1 ? 's' : ''} (free sachet${credits > 1 ? 's' : ''}). My number: ${phone}`;
+    window.open(`https://wa.me/254115509593?text=${encodeURIComponent(msg)}`, '_blank');
+  }
+
+  const referrerCache = {};
+
+  function clearReferrerFeedback() {
+    const fb = document.getElementById('referred-by-feedback');
+    if (fb) {
+      fb.style.display = 'none';
+      fb.textContent = '';
+    }
+  }
+
+  async function validateReferrerInput() {
+    const refInput = document.getElementById('referredBy');
+    const phoneInput = document.getElementById('phone');
+    const fb = document.getElementById('referred-by-feedback');
+    if (!refInput) return { valid: true };
+
+    const rawRef = refInput.value.trim();
+    if (!rawRef) {
+      if (fb) fb.style.display = 'none';
+      return { valid: true, empty: true };
+    }
+
+    const cleanRef = normalizePhone(rawRef);
+    const cleanPhone = phoneInput ? normalizePhone(phoneInput.value.trim()) : '';
+
+    if (!cleanRef) {
+      if (fb) {
+        fb.style.display = 'block';
+        fb.style.color = 'var(--primary)';
+        fb.textContent = '⚠️ Please enter a valid Kenya phone number (e.g. 0712345678).';
+      }
+      return { valid: false, error: 'Invalid phone format' };
+    }
+
+    if (cleanPhone && cleanRef === cleanPhone) {
+      if (fb) {
+        fb.style.display = 'block';
+        fb.style.color = 'var(--primary)';
+        fb.textContent = '⚠️ You cannot refer yourself.';
+      }
+      return { valid: false, error: 'Self referral' };
+    }
+
+    if (referrerCache[cleanRef] !== undefined) {
+      renderReferrerFeedback(referrerCache[cleanRef]);
+      return referrerCache[cleanRef];
+    }
+
+    if (fb) {
+      fb.style.display = 'block';
+      fb.style.color = 'var(--text-muted)';
+      fb.innerHTML = 'Verifying member status <span class="spinner"></span>';
+    }
+
+    try {
+      let isExisting = false;
+      try {
+        const json = await callOrderHandler({
+          validate_referrer: true,
+          phone_number: cleanRef,
+          client_phone: cleanPhone,
+        });
+        if (json?.status === 'referrer_validation') {
+          isExisting = json.valid === true;
+        } else {
+          const [mem, sat] = await Promise.allSettled([
+            fetchMembership(cleanRef),
+            fetchSaturationStatus(cleanRef),
+          ]);
+          const hasPaid = mem.status === 'fulfilled' && (mem.value?.completedOrders > 0);
+          const hasConfirmed = sat.status === 'fulfilled' && !sat.value?.isNewClient;
+          isExisting = hasPaid || hasConfirmed;
+        }
+      } catch (innerErr) {
+        const [mem, sat] = await Promise.allSettled([
+          fetchMembership(cleanRef),
+          fetchSaturationStatus(cleanRef),
+        ]);
+        const hasPaid = mem.status === 'fulfilled' && (mem.value?.completedOrders > 0);
+        const hasConfirmed = sat.status === 'fulfilled' && !sat.value?.isNewClient;
+        isExisting = hasPaid || hasConfirmed;
+      }
+
+      const result = {
+        valid: isExisting,
+        phone: cleanRef,
+        error: isExisting ? null : 'Candidate referrer must have at least 1 confirmed order',
+      };
+      referrerCache[cleanRef] = result;
+      renderReferrerFeedback(result);
+      return result;
+    } catch (err) {
+      if (fb) {
+        fb.style.display = 'block';
+        fb.style.color = 'var(--primary)';
+        fb.textContent = '⚠️ Could not verify referrer. Please check connection.';
+      }
+      return { valid: false, error: 'Verification failed' };
+    }
+  }
+
+  function renderReferrerFeedback(result) {
+    const fb = document.getElementById('referred-by-feedback');
+    if (!fb) return;
+    fb.style.display = 'block';
+    if (result.valid) {
+      fb.style.color = '#22C55E';
+      fb.textContent = '✓ Verified client with confirmed/paid order';
+    } else {
+      fb.style.color = 'var(--primary)';
+      fb.textContent = '⚠️ Candidate referrer must have at least 1 confirmed order.';
+    }
+  }
+
+  let lastSaturation = null;
+  let lastTierMenu = [];
+  let lastMembership = null;
+
+  function renderTierTable(menu) {
+    const rows = menu.map(t => `
+      <div class="summary-row tier-row" style="cursor:pointer; align-items:center;" onclick="selectTier(${t.doses_per_day})" id="tier-row-${t.doses_per_day}">
+        <span class="summary-label">${t.doses_per_day}x/day &mdash; ready in ~${t.days_to_saturate} days${t.batching_eligible ? ' <span style="color:var(--text-muted); font-size:0.75rem;">(weekly batches available)</span>' : ''}</span>
+        <span class="summary-val">${formatKES(t.daily_cost)}/day</span>
+      </div>
+    `).join('');
+    return `
+      <div style="font-size:0.85rem; color:var(--accent-gold); font-weight:700; margin-bottom:0.75rem; display:flex; align-items:center; gap:0.4rem;">
+        <span>\u{1F447}</span><span>Tap a pace below to see your price and continue</span>
+      </div>
+      ${rows}
+    `;
+  }
+
+  async function checkMyPlan() {
     const submitBtn = document.querySelector('.btn-submit');
     submitBtn.disabled = true;
-    submitBtn.innerHTML = 'Preparing <span class="spinner"></span>';
+    submitBtn.innerHTML = 'Checking <span class="spinner"></span>';
 
     try {
       const phone = normalizePhone(document.getElementById('phone').value.trim());
       const weight = parseFloat(document.getElementById('weight').value);
-      const goal = document.getElementById('goal').value;
-      const duration = parseInt(document.getElementById('duration').value, 10);
-      const trainingDaysPerWeek = parseInt(document.getElementById('trainingDays')?.value || '4', 10);
       const location = document.getElementById('location').value.trim();
-      const gym = document.getElementById('gym').value.trim();
-      const autoRenew = document.getElementById('autoRenew').checked;
 
       if (!phone) { alert('Please enter a valid M-Pesa phone number.'); return; }
       if (!Number.isFinite(weight) || weight < 30 || weight > 250) { alert('Please enter a valid weight.'); return; }
-      if (!goal) { alert('Please select your goal.'); return; }
       if (!location) { alert('Please enter your location.'); return; }
 
-      const wc = getWeightClass(weight);
+      const rawReferrer = document.getElementById('referredBy').value.trim();
+      if (rawReferrer) {
+        const refCheck = await validateReferrerInput();
+        if (!refCheck.valid) {
+          alert('The "Referred By" number must belong to an existing client with at least 1 confirmed order. Please enter the number your referrer orders with.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'SEE MY PLAN';
+          document.getElementById('referredBy').focus();
+          return;
+        }
+      }
+
+      document.getElementById('tier-box').classList.remove('active');
+      document.getElementById('maintenance-box').classList.remove('active');
+      document.getElementById('result-box').classList.remove('active');
+
       const membership = await fetchMembership(phone);
-      const completedOrders = membership.completedOrders;
-      const nextOrderNumber = membership.nextOrderNumber;
-      const isMember = membership.isMember; // strictly false if completedOrders < 4
-      const isMilestoneOrder = membership.isMilestone;
+      lastMembership = membership;
 
-      let planName = goal === 'loading' ? 'Fast Saturation (5 Days)' : 'Daily Maintenance';
-      let planType = goal === 'loading' ? 'fast_saturation' : 'daily_maintenance';
-      let totalSachets = goal === 'loading' ? 20 : duration;
-
-      const orderPayload = {
-        client_order_id: generateUUID(),
+      const json = await callOrderHandler({
+        quote_only: true,
         phone_number: phone,
         body_weight_kg: weight,
-        plan_type: planType,
-        plan_name: planName,
-        weight_class: `Class ${wc.name}`,
-        weight_class_short: wc.name,
-        duration_days: goal === 'loading' ? 5 : duration,
-        training_days_per_week: goal === 'loading' ? null : trainingDaysPerWeek,
-        total_sachets: totalSachets,
-        location,
-        gym,
-        auto_renew: autoRenew,
-      };
+      });
 
-      let quotePricing = null;
-      try {
-        quotePricing = await fetchQuote(orderPayload);
-      } catch (err) {
-        console.warn('Quote fetch failed, fallback mode active:', err);
-      }
+      lastSaturation = json.saturation;
 
-      // Hard enforcement: If customer hasn't completed 4 orders, override quote to 0% discount
-      if (!isMember && quotePricing) {
-        quotePricing.discount_amount = 0;
-        quotePricing.discount_applied = 'NONE';
-        quotePricing.net_amount = quotePricing.gross_amount || quotePricing.net_amount;
-      }
-
-      const finalPriceDisplay = quotePricing ? formatKES(quotePricing.net_amount) : 'Confirmed upon submission';
-
-      const quoteDiscountRowHtml = (quotePricing && Number(quotePricing.discount_amount) > 0)
-        ? `<div class="summary-row">
-             <span class="summary-label">Discount Applied</span>
-             <span class="summary-val">−${formatKES(quotePricing.discount_amount)} (${formatTierName(quotePricing.discount_applied)})</span>
-           </div>`
-        : '';
-
-      const summaryRowsHtml = `
-        <div class="summary-row"><span class="summary-label">Phone Number</span><span class="summary-val">${phone}</span></div>
-        <div class="summary-row"><span class="summary-label">Weight Class</span><span class="summary-val">Class ${wc.name} (${wc.label}, ${wc.sachetG}g)</span></div>
-        <div class="summary-row"><span class="summary-label">Phase / Plan</span><span class="summary-val">${planName}</span></div>
-        <div class="summary-row"><span class="summary-label">Total Sachets</span><span class="summary-val">${totalSachets} Sachets</span></div>
-        <div class="summary-row"><span class="summary-label">Verified Status</span><span class="summary-val">${isMember ? '👑 Ironclad VIP' : 'Standard Tier'}</span></div>
-        <div class="summary-row"><span class="summary-label">Verified Orders</span><span class="summary-val">${completedOrders}</span></div>
-        <div class="summary-row"><span class="summary-label">This Order</span><span class="summary-val">#${nextOrderNumber}</span></div>
-        <div class="summary-row"><span class="summary-label">Location</span><span class="summary-val">${location}${gym ? ' (' + gym + ')' : ''}</span></div>
-        <div class="summary-row"><span class="summary-label">Auto-Renew</span><span class="summary-val">${autoRenew ? '🔁 On (cancel anytime)' : 'Off'}</span></div>
-        ${quoteDiscountRowHtml}
-        <div class="summary-row"><span class="summary-label">Final Price</span><span class="summary-val gold">${finalPriceDisplay}</span></div>
-      `;
-
-      const bannerBox = document.getElementById('discount-banner-container');
-      if (isMilestoneOrder) {
-        bannerBox.innerHTML = `<div class="discount-banner">🎁 30% Milestone reward eligibility detected!</div>`;
-      } else if (isMember) {
-        bannerBox.innerHTML = `<div class="discount-banner">👑 10% Ironclad VIP member discount applied!</div>`;
+      if (json.saturation.isSaturated) {
+        const plan = json.maintenance_plan;
+        document.getElementById('maintenance-note').textContent = plan.note;
+        document.getElementById('maintenance-summary').innerHTML = `
+          <div class="summary-row"><span class="summary-label">Plan</span><span class="summary-val">1 sachet/day</span></div>
+          <div class="summary-row"><span class="summary-label">Batch</span><span class="summary-val">${plan.duration_days} days</span></div>
+          <div class="summary-row"><span class="summary-label">Total</span><span class="summary-val gold">${formatKES(plan.net_amount)}</span></div>
+        `;
+        document.getElementById('maintenance-box').classList.add('active');
+        buildOrderSummary({
+          dosesPerDay: plan.doses_per_day,
+          durationDays: plan.duration_days,
+          pricing: plan,
+          planLabel: 'Maintenance (1x/day)',
+        });
       } else {
-        bannerBox.innerHTML = `<div class="discount-banner" style="background:rgba(255,255,255,0.05); color:var(--text-secondary); border-color:var(--border-color);">
-          🔒 Standard Tier Rate. Complete Order #${nextOrderNumber} (plus ${4 - nextOrderNumber} more) to unlock VIP benefits.
-        </div>`;
-      }
-
-      document.getElementById('plan-title').textContent = `${planName.toUpperCase()} SUMMARY`;
-      document.getElementById('summary-rows').innerHTML = summaryRowsHtml;
-
-      const whatsappBtn = document.getElementById('whatsapp-btn');
-      whatsappBtn.onclick = async function(e) {
-        e.preventDefault();
-        whatsappBtn.style.pointerEvents = 'none';
-        whatsappBtn.innerHTML = 'Confirming price...';
-
-        try {
-          const res = await callOrderHandler(orderPayload);
-          if (!res || res.error) throw new Error(res?.error || 'Order processing failed.');
-
-          const netTotal = res.pricing?.net_amount || quotePricing?.net_amount;
-          const msg = [
-            "Hello! I'd like to place an order.",
-            `Phone: ${phone}`,
-            `Plan: ${planName}`,
-            `Weight Class: Class ${wc.name}`,
-            `Verified Orders: ${completedOrders}`,
-            `Order Number: #${nextOrderNumber}`,
-            `Total: ${formatKES(netTotal)}`,
-            `Location: ${location}${gym ? ', ' + gym : ''}`,
-            `Auto-Renew: ${autoRenew ? 'Yes — please message me to reorder when I run out' : 'No'}`
-          ].join('\n');
-
-          window.open(`https://wa.me/254115509593?text=${encodeURIComponent(msg)}`, '_blank');
-        } catch (err) {
-          showDebug(err?.message || 'Failed to submit order.', 'warn');
-        } finally {
-          whatsappBtn.style.pointerEvents = '';
-          whatsappBtn.innerHTML = '<span>📲 PAY & ORDER VIA WHATSAPP</span>';
+        lastTierMenu = json.tier_menu || [];
+        if (lastTierMenu.length === 0) {
+          showDebug(json.error || 'No saturation tier available for this weight.', 'error');
+          return;
         }
-      };
-
-      const resultBox = document.getElementById('result-box');
-      resultBox.classList.add('active');
-      setTimeout(() => resultBox.scrollIntoView({ behavior: 'smooth' }), 100);
-
+        document.getElementById('tier-subtitle').textContent =
+          `You're building toward saturation. Pick a pace \u2014 faster tiers don't cost more per gram.`;
+        document.getElementById('tier-table').innerHTML = renderTierTable(lastTierMenu);
+        document.getElementById('tier-box').classList.add('active');
+        setTimeout(() => document.getElementById('tier-box').scrollIntoView({ behavior: 'smooth' }), 100);
+      }
     } catch (err) {
       showDebug(err?.message || String(err), 'error');
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'CALCULATE & CONFIRM PLAN';
+      submitBtn.textContent = 'SEE MY PLAN';
     }
+  }
+
+  let lastSelectedDosesPerDay = null;
+
+  async function selectTier(dosesPerDay) {
+    lastSelectedDosesPerDay = dosesPerDay;
+    document.getElementById('batching-choice').style.display = 'none';
+
+    try {
+      const phone = normalizePhone(document.getElementById('phone').value.trim());
+      const weight = parseFloat(document.getElementById('weight').value);
+
+      const json = await callOrderHandler({
+        quote_only: true,
+        phone_number: phone,
+        body_weight_kg: weight,
+        doses_per_day: dosesPerDay,
+        batch_weekly: false,
+      });
+
+      const tier = json.selected_tier;
+
+      document.querySelectorAll('[id^="tier-row-"]').forEach(el => el.style.background = 'transparent');
+      const row = document.getElementById(`tier-row-${dosesPerDay}`);
+      if (row) row.style.background = 'rgba(255,184,0,0.08)';
+
+      if (tier.batching_eligible) {
+        const batchBox = document.getElementById('batching-choice');
+        batchBox.innerHTML = `
+          <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.75rem;">
+            This runs ${tier.natural_duration_days} days total. Get it all at once, or in weekly batches (delivered and paid as you go)?
+          </div>
+          <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+            <button class="btn-action" onclick="chooseBatching(false)" id="batch-choice-all" style="flex:1; min-width:140px;">All At Once</button>
+            <button class="btn-action" onclick="chooseBatching(true)" id="batch-choice-weekly" style="flex:1; min-width:140px; background:var(--accent-gold); color:#111;">Weekly Batches</button>
+          </div>
+        `;
+        batchBox.style.display = 'block';
+      } else {
+        buildOrderSummary({
+          dosesPerDay: tier.doses_per_day,
+          durationDays: tier.duration_days,
+          pricing: tier,
+          planLabel: `Saturation Plan (${tier.doses_per_day}x/day)`,
+        });
+      }
+    } catch (err) {
+      showDebug(err?.message || String(err), 'error');
+    }
+  }
+
+  async function chooseBatching(batchWeekly) {
+    try {
+      const phone = normalizePhone(document.getElementById('phone').value.trim());
+      const weight = parseFloat(document.getElementById('weight').value);
+
+      const json = await callOrderHandler({
+        quote_only: true,
+        phone_number: phone,
+        body_weight_kg: weight,
+        doses_per_day: lastSelectedDosesPerDay,
+        batch_weekly: batchWeekly,
+      });
+
+      const tier = json.selected_tier;
+      const allBtn = document.getElementById('batch-choice-all');
+      const weeklyBtn = document.getElementById('batch-choice-weekly');
+      if (allBtn && weeklyBtn) {
+        allBtn.style.background = batchWeekly ? 'transparent' : 'var(--accent-gold)';
+        allBtn.style.color = batchWeekly ? '' : '#111';
+        weeklyBtn.style.background = batchWeekly ? 'var(--accent-gold)' : 'transparent';
+        weeklyBtn.style.color = batchWeekly ? '#111' : '';
+      }
+
+      buildOrderSummary({
+        dosesPerDay: tier.doses_per_day,
+        durationDays: tier.duration_days,
+        pricing: tier,
+        planLabel: batchWeekly && tier.is_batched
+          ? `Saturation Plan (${tier.doses_per_day}x/day, weekly batch 1 of ~${Math.ceil(tier.natural_duration_days / tier.duration_days)})`
+          : `Saturation Plan (${tier.doses_per_day}x/day)`,
+        batchWeekly,
+      });
+    } catch (err) {
+      showDebug(err?.message || String(err), 'error');
+    }
+  }
+
+  function buildOrderSummary({ dosesPerDay, durationDays, pricing, planLabel, batchWeekly = false }) {
+    const phone = normalizePhone(document.getElementById('phone').value.trim());
+    const weight = parseFloat(document.getElementById('weight').value);
+    const location = document.getElementById('location').value.trim();
+    const gym = document.getElementById('gym').value.trim();
+    const referredBy = normalizePhone(document.getElementById('referredBy').value.trim());
+    const autoRenew = batchWeekly ? true : document.getElementById('autoRenew').checked;
+    const m = lastMembership;
+
+    if (!m) { showDebug('Check your plan first.', 'warn'); return; }
+
+    const orderPayload = {
+      client_order_id: generateUUID(),
+      phone_number: phone,
+      body_weight_kg: weight,
+      doses_per_day: dosesPerDay,
+      batch_weekly: batchWeekly,
+      location,
+      gym,
+      auto_renew: autoRenew,
+      referred_by_phone: referredBy || undefined,
+    };
+
+    const netTotal = pricing.net_amount;
+    const discountRowHtml = (Number(pricing.discount_amount) > 0)
+      ? `<div class="summary-row">
+           <span class="summary-label">Discount Applied</span>
+           <span class="summary-val">\u2212${formatKES(pricing.discount_amount)} (${formatTierName(pricing.discount_applied)})</span>
+         </div>`
+      : '';
+
+    const batchingRowHtml = batchWeekly
+      ? `<div class="summary-row"><span class="summary-label">Delivery</span><span class="summary-val">📦 Weekly batches (auto-continues)</span></div>`
+      : '';
+
+    const referralRowHtml = (referredBy && referrerCache[referredBy]?.valid)
+      ? `<div class="summary-row"><span class="summary-label">Referred By</span><span class="summary-val">🤝 ${referredBy} (Verified)</span></div>`
+      : '';
+
+    const summaryRowsHtml = `
+      <div class="summary-row"><span class="summary-label">Phone Number</span><span class="summary-val">${phone}</span></div>
+      <div class="summary-row"><span class="summary-label">Plan</span><span class="summary-val">${planLabel}</span></div>
+      <div class="summary-row"><span class="summary-label">Duration</span><span class="summary-val">${durationDays} days</span></div>
+      ${batchingRowHtml}
+      ${referralRowHtml}
+      <div class="summary-row"><span class="summary-label">Verified Status</span><span class="summary-val">${m.isMember ? '👑 Ironclad VIP' : 'Standard Tier'}</span></div>
+      <div class="summary-row"><span class="summary-label">Verified Orders</span><span class="summary-val">${m.completedOrders}</span></div>
+      <div class="summary-row"><span class="summary-label">This Order</span><span class="summary-val">#${m.nextOrderNumber}</span></div>
+      <div class="summary-row"><span class="summary-label">Location</span><span class="summary-val">${location}${gym ? ' (' + gym + ')' : ''}</span></div>
+      <div class="summary-row"><span class="summary-label">Auto-Renew</span><span class="summary-val">${autoRenew ? '🔁 On (cancel anytime)' : 'Off'}</span></div>
+      ${discountRowHtml}
+      <div class="summary-row"><span class="summary-label">Final Price</span><span class="summary-val gold">${formatKES(netTotal)}</span></div>
+    `;
+
+    const bannerBox = document.getElementById('discount-banner-container');
+    if (m.isMilestone) {
+      bannerBox.innerHTML = `<div class="discount-banner">🎁 30% Milestone reward eligibility detected!</div>`;
+    } else if (m.isMember) {
+      bannerBox.innerHTML = `<div class="discount-banner">👑 10% Ironclad VIP member discount applied!</div>`;
+    } else {
+      bannerBox.innerHTML = `<div class="discount-banner" style="background:rgba(255,255,255,0.05); color:var(--text-secondary); border-color:var(--border-color);">
+        🔒 Standard Tier Rate. Complete Order #${m.nextOrderNumber} (plus ${4 - m.nextOrderNumber} more) to unlock VIP benefits.
+      </div>`;
+    }
+
+    document.getElementById('plan-title').textContent = `${planLabel.toUpperCase()} SUMMARY`;
+    document.getElementById('summary-rows').innerHTML = summaryRowsHtml;
+
+    const whatsappBtn = document.getElementById('whatsapp-btn');
+    whatsappBtn.onclick = async function(e) {
+      e.preventDefault();
+      if (referredBy) {
+        const refCheck = await validateReferrerInput();
+        if (!refCheck.valid) {
+          alert('The "Referred By" number must belong to an existing client with at least 1 confirmed order. Please enter the number your referrer uses to order.');
+          return;
+        }
+      }
+
+      whatsappBtn.style.pointerEvents = 'none';
+      whatsappBtn.innerHTML = 'Confirming price...';
+
+      try {
+        const isVerifiedReferrer = referredBy && referrerCache[referredBy]?.valid;
+        orderPayload.referred_by_phone = isVerifiedReferrer ? referredBy : undefined;
+
+        const res = await callOrderHandler(orderPayload);
+        if (!res || res.error) throw new Error(res?.error || 'Order processing failed.');
+
+        const confirmedTotal = res.pricing?.net_amount || netTotal;
+        const msg = [
+          "Hello! I'd like to place an order.",
+          `Phone: ${phone}`,
+          `Plan: ${planLabel}`,
+          `Duration: ${durationDays} days`,
+          ...(batchWeekly ? [`Delivery: Weekly batches (please deliver batch 1 first)`] : []),
+          `Verified Orders: ${m.completedOrders}`,
+          `Order Number: #${m.nextOrderNumber}`,
+          `Total: ${formatKES(confirmedTotal)}`,
+          `Location: ${location}${gym ? ', ' + gym : ''}`,
+          `Auto-Renew: ${autoRenew ? 'Yes — please message me to reorder when I run out' : 'No'}`,
+          ...(isVerifiedReferrer ? [`Referred by: ${referredBy}`] : []),
+        ].join('\n');
+
+        window.open(`https://wa.me/254115509593?text=${encodeURIComponent(msg)}`, '_blank');
+      } catch (err) {
+        showDebug(err?.message || 'Failed to submit order.', 'warn');
+      } finally {
+        whatsappBtn.style.pointerEvents = '';
+        whatsappBtn.innerHTML = '<span>\ud83d\udcf2 PAY & ORDER VIA WHATSAPP</span>';
+      }
+    };
+
+    const resultBox = document.getElementById('result-box');
+    resultBox.classList.add('active');
+    setTimeout(() => resultBox.scrollIntoView({ behavior: 'smooth' }), 100);
   }
 </script>
 </body>
