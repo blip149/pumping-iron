@@ -95,6 +95,7 @@ function simulateOrderWindow(args: {
   orderStart: Date;
   durationDays: number;
   totalGrams: number;
+  threshold: number;
   simulateUpTo: Date;
 }): number {
   const duration = Math.max(1, args.durationDays);
@@ -108,7 +109,9 @@ function simulateOrderWindow(args: {
   const daysToSimulate = Math.max(0, Math.floor(daysBetween(args.orderStart, simEnd)));
 
   for (let day = 0; day < daysToSimulate; day++) {
-    store = decayStore(store, 1) + dailyDose;
+    // Once at the ceiling, extra doses don't accumulate — they're excreted,
+    // essentially immediately, since muscle uptake is already maxed out.
+    store = Math.min(args.threshold, decayStore(store, 1) + dailyDose);
   }
 
   return store;
@@ -190,6 +193,7 @@ serve(async (req: Request) => {
           orderStart,
           durationDays,
           totalGrams: order.grams_delivered ?? 0,
+          threshold,
           simulateUpTo: addDays(orderStart, durationDays),
         });
 
@@ -244,7 +248,7 @@ serve(async (req: Request) => {
             client_order_id: newOrderId,
             user_id: order.user_id,
             phone_number: order.phone_number,
-            plan_type: isSaturated ? "maintenance" : "saturation",
+            plan_type: isSaturated ? "daily_maintenance" : "fast_saturation",
             plan_name: nextPlanName,
             body_weight_kg: weightKg,
             duration_days: nextDurationDays,

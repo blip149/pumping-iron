@@ -275,18 +275,31 @@ function simulateOrderWindow(args: {
   const gapDays = daysBetween(args.storeAsOfDate, args.orderStart);
   let store = gapDays > 0 ? decayStore(args.storeBefore, gapDays) : args.storeBefore;
 
-  const simEnd = args.simulateUpTo < orderEnd ? args.simulateUpTo : orderEnd;
-  const daysToSimulate = Math.max(0, Math.floor(daysBetween(args.orderStart, simEnd)));
+  // Doses only happen during the order's own window — cap the DOSING
+  // simulation at orderEnd even if simulateUpTo is later.
+  const doseEnd = args.simulateUpTo < orderEnd ? args.simulateUpTo : orderEnd;
+  const daysToSimulate = Math.max(0, Math.floor(daysBetween(args.orderStart, doseEnd)));
 
   let crossedThresholdAt: Date | null = null;
   let cursor = args.orderStart;
 
   for (let day = 0; day < daysToSimulate; day++) {
-    store = decayStore(store, 1) + dailyDose;
+    // Once at the ceiling, extra doses don't accumulate — they're excreted,
+    // essentially immediately, since muscle uptake is already maxed out.
+    store = Math.min(args.threshold, decayStore(store, 1) + dailyDose);
     cursor = addDays(cursor, 1);
     if (crossedThresholdAt === null && store >= args.threshold) {
       crossedThresholdAt = cursor;
     }
+  }
+
+  // If we're being asked about a moment AFTER the order's window ended
+  // (e.g. checking status weeks after their last batch ran out), keep
+  // decaying — no more doses, but the store doesn't just freeze in place.
+  if (args.simulateUpTo > orderEnd) {
+    const extraDays = daysBetween(orderEnd, args.simulateUpTo);
+    store = decayStore(store, extraDays);
+    cursor = args.simulateUpTo;
   }
 
   return { store, asOfDate: cursor, crossedThresholdAt };
@@ -398,7 +411,7 @@ async function getCurrentSaturationStatus(phone: string, weightOverrideKg?: numb
 // getCurrentSaturationStatus is next called for this client — it looks up
 // this same order (by confirmed_at) and simulates forward from here.
 // ----------------------------------------------------------
-async function confirmDelivery(clientOrderId: string) {
+async function confirmDelivery(clientOrderId: string, pickupDateOverride?: string) {
   const { data: order, error: orderError } = await db
     .from("orders")
     .select("id, phone_number, created_at, confirmed_at, grams_delivered")
@@ -411,7 +424,22 @@ async function confirmDelivery(clientOrderId: string) {
     return { confirmed: false, reason: "Order was already confirmed.", confirmedAt: order.confirmed_at };
   }
 
-  const now = new Date();
+  const actualNow = new Date();
+  let now = actualNow;
+
+  if (pickupDateOverride) {
+    const parsed = new Date(pickupDateOverride);
+    if (Number.isNaN(parsed.getTime())) {
+      return { confirmed: false, reason: "pickup_date is not a valid date." };
+    }
+    if (parsed > actualNow) {
+      return { confirmed: false, reason: "pickup_date can't be in the future." };
+    }
+    if (parsed < new Date(order.created_at)) {
+      return { confirmed: false, reason: "pickup_date can't be before the order was placed." };
+    }
+    now = parsed;
+  }
 
   const { data: userRow, error: userError } = await db
     .from("users")
@@ -760,7 +788,8 @@ serve(async (req: Request) => {
         return jsonResponse({ error: "client_order_id is required to confirm delivery." }, 400);
       }
 
-      const result = await confirmDelivery(clientOrderId);
+      const pickupDate = typeof body?.pickup_date === "string" && body.pickup_date.trim() ? body.pickup_date.trim() : undefined;
+      const result = await confirmDelivery(clientOrderId, pickupDate);
       return jsonResponse({ status: "delivery_confirmation", ...result }, result.confirmed ? 200 : 409);
     }
 
@@ -1021,7 +1050,7 @@ serve(async (req: Request) => {
       client_order_id: clientOrderId,
       user_id: userId,
       phone_number: phone,
-      plan_type: saturation.isSaturated ? "maintenance" : "saturation",
+      plan_type: saturation.isSaturated ? "daily_maintenance" : "fast_saturation",
       plan_name: planName,
       body_weight_kg: weight,
       duration_days: financials.durationDays,

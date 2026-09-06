@@ -3,6 +3,15 @@
 // ONE-OFF script. Run once, manually, before the new saturation-tracking
 // system goes live. Not deployed as a permanent edge function.
 //
+// NOTE: weight_class, training_days_per_week, training_sachet_days, and
+// rest_sachet_days were dropped from the orders table once the flat-3g
+// pricing model made them permanently unused. This script no longer
+// reconstructs historical dosing from them — it trusts whatever
+// grams_delivered value is already stored on each order (written by an
+// earlier backfill run, or by the live order-handler for anything created
+// after the rewrite), and only estimates a flat floor dose for the rare
+// order that somehow has neither.
+//
 // What it does:
 //   For every client with a confirmed (delivered) or paid order, walks
 //   their order history chronologically and simulates day-by-day how their
@@ -38,18 +47,6 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 const db = supabase.schema("v2");
-
-// Must match the WEIGHT_CLASSES table in index.ts at the time these
-// historical orders were placed. If you changed the weight-class grams
-// since launch, keep this snapshot as-is — it reflects what was ACTUALLY
-// delivered historically, not today's rules.
-const WEIGHT_CLASSES_SNAPSHOT: Record<string, number> = {
-  A: 3.0,
-  B: 4.5,
-  C: 6.0,
-  D: 7.5,
-  E: 9.0,
-};
 
 const FLOOR_GRAMS = 3.0;
 
@@ -106,7 +103,9 @@ function simulateOrderWindow(args: {
   let cursor = args.orderStart;
 
   for (let day = 0; day < daysToSimulate; day++) {
-    store = decayStore(store, 1) + dailyDose;
+    // Once at the ceiling, extra doses don't accumulate — they're excreted,
+    // essentially immediately, since muscle uptake is already maxed out.
+    store = Math.min(args.threshold, decayStore(store, 1) + dailyDose);
     cursor = addDays(cursor, 1);
     if (crossedThresholdAt === null && store >= args.threshold) {
       crossedThresholdAt = cursor;
@@ -121,37 +120,20 @@ function saturationThresholdGrams(weightKg: number): number {
   return 84 * (weightKg / 70);
 }
 
-function weightClassLetter(raw: string | null): string | null {
-  if (!raw) return null;
-  const cleaned = raw.trim().replace(/^Class\s*/i, "").trim().toUpperCase();
-  return cleaned.length ? cleaned.slice(-1) : null;
-}
-
+// weight_class, training_sachet_days, and rest_sachet_days were dropped from
+// the orders table once the flat-3g pricing model made them permanently
+// unused. That means we can no longer RECONSTRUCT dosing for old pre-rewrite
+// orders from scratch — but we don't need to: any order already processed by
+// an earlier backfill run has grams_delivered stored from when those columns
+// still existed. Trust that value first; only estimate for the rare order
+// that somehow has neither (e.g. a stray row that was never backfilled and
+// predates confirmed_at/the rewrite entirely — treated as a flat floor dose,
+// the most defensible guess with no other data to go on).
 function computeGramsForOrder(order: any): number {
-  const wcLetter = weightClassLetter(order.weight_class);
-  const wcGrams = wcLetter ? WEIGHT_CLASSES_SNAPSHOT[wcLetter] : null;
-
-  if (order.plan_type === "fast_saturation") {
-    // Historically: 20 sachets, all at weight-class grams.
-    return (order.total_sachets ?? 20) * (wcGrams ?? FLOOR_GRAMS);
+  if (order.grams_delivered != null) {
+    return Number(order.grams_delivered);
   }
 
-  if (order.plan_type === "budget_optimized") {
-    // budget_schedule was never actually deployed to this database (the
-    // feature was scrapped before shipping) — fall back to the floor dose,
-    // which is what these orders would have used in practice.
-    return (order.total_sachets ?? 0) * FLOOR_GRAMS;
-  }
-
-  // daily_maintenance (and any legacy/unknown type): training days at
-  // weight-class grams, rest days at the 3g floor.
-  const trainingDays = order.training_sachet_days ?? 0;
-  const restDays = order.rest_sachet_days ?? 0;
-  if (trainingDays || restDays) {
-    return trainingDays * (wcGrams ?? FLOOR_GRAMS) + restDays * FLOOR_GRAMS;
-  }
-
-  // Fallback for anything that doesn't match a known shape: assume floor dose.
   return (order.total_sachets ?? 0) * FLOOR_GRAMS;
 }
 
@@ -159,7 +141,7 @@ async function run() {
   console.log("Fetching all confirmed/paid orders...");
   const { data: orders, error } = await db
     .from("orders")
-    .select("id, phone_number, created_at, confirmed_at, duration_days, plan_type, total_sachets, weight_class, training_sachet_days, rest_sachet_days, status")
+    .select("id, phone_number, created_at, confirmed_at, duration_days, plan_type, total_sachets, grams_delivered, status")
     .or("confirmed_at.not.is.null,status.eq.paid")
     .order("phone_number", { ascending: true })
     .order("created_at", { ascending: true });
