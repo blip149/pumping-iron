@@ -52,7 +52,7 @@ const FLAT_SACHET_GRAMS = 3.0;
 const MAX_DOSES_PER_DAY = 7;
 const MAINTENANCE_BATCH_DAYS = 14;
 const WEEKLY_BATCH_DAYS = 7;
-const MIN_BATCH_SACHETS = 5; // a batch must exceed this — never an awkwardly tiny delivery
+const MIN_BATCH_DAYS = 6; // a batch is never delivered as fewer than this many days
 const DAILY_DECAY_RATE = 0.015;
 
 function round2(v: number) { return Math.round((v + Number.EPSILON) * 100) / 100; }
@@ -222,13 +222,10 @@ serve(async (req: Request) => {
 
           // Cap each batch at a week, but never let a tail batch (the last
           // leg of a multi-week saturation journey) drop below
-          // MIN_BATCH_SACHETS — that's the same floor the checkout's
-          // weekly-batch path enforces, applied correctly here: if capping
-          // at 7 days would leave too few sachets to be worth delivering,
-          // extend this batch just enough to clear that floor instead.
+          // MIN_BATCH_DAYS — a shorter tail isn't worth a dedicated
+          // delivery trip, so extend it instead of shipping it as-is.
           const cappedDuration = Math.min(WEEKLY_BATCH_DAYS, daysStillNeeded);
-          const minDurationForBatch = Math.ceil(MIN_BATCH_SACHETS / nextDosesPerDay);
-          nextDurationDays = Math.max(cappedDuration, minDurationForBatch);
+          nextDurationDays = Math.max(cappedDuration, MIN_BATCH_DAYS);
           nextPlanName = `Saturation Plan (${nextDosesPerDay}x/day)`;
         }
 

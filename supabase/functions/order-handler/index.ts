@@ -523,12 +523,18 @@ async function confirmDelivery(clientOrderId: string, pickupDateOverride?: strin
 // ----------------------------------------------------------
 const FLAT_SACHET_GRAMS = 3.0;
 const FLAT_SACHET_PRICE = getSachetPrice(FLAT_SACHET_GRAMS); // ~46 KES
-const MAX_DOSES_PER_DAY = 7;
-const MAX_SATURATION_DAYS = 28; // 4-week ceiling
+const MAX_DOSES_PER_DAY = 3; // no rush to saturate — don't overwhelm the body with high-frequency dosing
 const MAINTENANCE_BATCH_DAYS = 14;
 const WEEKLY_BATCH_DAYS = 7;
-const MIN_BATCH_SACHETS = 5; // a batch must exceed this — never an awkwardly tiny delivery
-const BATCHING_ELIGIBLE_MIN_DAYS = 14; // only offer weekly batching for 2+ week plans
+// A batch is never delivered as fewer than this many days — below that,
+// a dedicated delivery trip isn't worth it regardless of dose frequency.
+const MIN_BATCH_DAYS = 6;
+// Batching only makes sense once a plan is long enough that, after the
+// first 7-day batch, there's still a real (>= MIN_BATCH_DAYS) tail left —
+// otherwise splitting it just creates a delivery trip that isn't worth
+// making on its own. Deriving this from the two day-counts directly (13)
+// keeps it from drifting out of sync if either constant changes.
+const BATCHING_ELIGIBLE_MIN_DAYS = WEEKLY_BATCH_DAYS + MIN_BATCH_DAYS;
 
 // price(n) = 46 - 9*(n-1)/n — approaches but can never reach/exceed a
 // 9 KES/sachet discount, at any dose frequency, by construction.
@@ -556,8 +562,9 @@ function generateSaturationTierMenu(remainingGrams: number) {
 
   for (let n = 1; n <= MAX_DOSES_PER_DAY; n++) {
     const gramsPerDay = n * FLAT_SACHET_GRAMS;
+    // No ceiling here on purpose — no rush to saturate. Whatever the true
+    // days-to-saturate is at this frequency, that's what gets quoted.
     const daysToSaturate = Math.max(1, Math.ceil(remainingGrams / gramsPerDay));
-    if (daysToSaturate > MAX_SATURATION_DAYS) continue; // doesn't clear the 4-week cap — not offered
 
     const dailyCost = dailyCostForDoses(n);
     tiers.push({
@@ -596,18 +603,22 @@ function calculateOrderFinancials(args: {
     const menu = generateSaturationTierMenu(args.remainingGrams);
     const chosen = menu.find((t) => t.dosesPerDay === args.requestedDosesPerDay) ?? menu[0];
     if (!chosen) {
-      throw new Error("No valid saturation tier available for this weight — remaining grams too high even at max frequency.");
+      throw new Error("No valid saturation tier available for this weight.");
     }
     dosesPerDay = chosen.dosesPerDay;
     naturalDurationDays = chosen.daysToSaturate;
 
-    // Weekly batching only makes sense for a 2+ week plan — anything
-    // shorter is already close to one batch anyway.
+    // Weekly batching only makes sense once the plan already needs more
+    // than one delivery trip — a plan that fits in a single week doesn't
+    // gain anything from being "batched."
     if (args.batchWeekly && chosen.daysToSaturate >= BATCHING_ELIGIBLE_MIN_DAYS) {
       const cappedDuration = Math.min(WEEKLY_BATCH_DAYS, chosen.daysToSaturate);
-      // Never create an awkwardly tiny first batch — if capping at 7 days
-      // would produce 5 sachets or fewer, just deliver the full plan instead.
-      durationDays = (dosesPerDay * cappedDuration) <= MIN_BATCH_SACHETS ? chosen.daysToSaturate : cappedDuration;
+      // Never create an awkwardly short first batch — if capping at 7 days
+      // would leave a tail under MIN_BATCH_DAYS, deliver the full plan
+      // in one go instead. (In practice this never fires once
+      // BATCHING_ELIGIBLE_MIN_DAYS already guarantees a >= MIN_BATCH_DAYS
+      // tail — kept as a guard in case either constant changes later.)
+      durationDays = cappedDuration < MIN_BATCH_DAYS ? chosen.daysToSaturate : cappedDuration;
       isBatched = durationDays < chosen.daysToSaturate;
     } else {
       // Non-batched orders always cover at least a full week — never sell
@@ -966,7 +977,7 @@ serve(async (req: Request) => {
           membership: membershipPayload(eligibility),
           saturation,
           tier_menu: [],
-          error: `No saturation tier reaches your target within ${MAX_SATURATION_DAYS} days even at max frequency — this weight needs a longer window than we currently offer.`,
+          error: "No saturation tier could be generated for this weight — please retry or contact support.",
         }, 200);
       }
 
