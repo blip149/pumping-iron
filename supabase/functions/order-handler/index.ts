@@ -610,7 +610,10 @@ function calculateOrderFinancials(args: {
       durationDays = (dosesPerDay * cappedDuration) <= MIN_BATCH_SACHETS ? chosen.daysToSaturate : cappedDuration;
       isBatched = durationDays < chosen.daysToSaturate;
     } else {
-      durationDays = chosen.daysToSaturate;
+      // Non-batched orders always cover at least a full week — never sell
+      // just the bare number of days needed to top off. The 5-sachet floor
+      // above is a separate rule that only governs weekly-batch splitting.
+      durationDays = Math.max(WEEKLY_BATCH_DAYS, chosen.daysToSaturate);
     }
 
     grossAmount = round2(dailyCostForDoses(dosesPerDay) * durationDays);
@@ -645,6 +648,37 @@ function calculateOrderFinancials(args: {
     naturalDurationDays,
     isBatched,
   };
+}
+
+// ----------------------------------------------------------
+// confirm_payment — marks an order's PAYMENT as received. Deliberately
+// independent from confirm_delivery above: an order can be delivered before
+// it's paid (cash/M-Pesa collected on a later visit) or paid before it's
+// delivered, depending on how a given order actually plays out. This is the
+// only place `status` gets set to "paid" — every VIP/milestone eligibility
+// check and the auto-renew due-date logic reads that field, not confirmed_at.
+// ----------------------------------------------------------
+async function confirmPayment(clientOrderId: string) {
+  const { data: order, error: orderError } = await db
+    .from("orders")
+    .select("id, status")
+    .eq("client_order_id", clientOrderId)
+    .maybeSingle();
+
+  if (orderError) throw new Error(`Order lookup failed: ${orderError.message}`);
+  if (!order) return { confirmed: false, reason: "Order not found." };
+  if (order.status === "paid") {
+    return { confirmed: false, reason: "Order was already marked paid." };
+  }
+
+  const { error: updateError } = await db
+    .from("orders")
+    .update({ status: "paid" })
+    .eq("id", order.id);
+
+  if (updateError) throw new Error(`Order update failed: ${updateError.message}`);
+
+  return { confirmed: true };
 }
 
 function membershipPayload(eligibility: { streakCount: number; isVip: boolean; isMilestone: boolean }) {
@@ -782,6 +816,20 @@ serve(async (req: Request) => {
       return jsonResponse({ status: "cancelled", ...result }, 200);
     }
 
+    if (body?.confirm_payment === true) {
+      if (!ADMIN_SECRET || body?.admin_secret !== ADMIN_SECRET) {
+        return jsonResponse({ error: "Unauthorized." }, 401);
+      }
+
+      const clientOrderId = typeof body?.client_order_id === "string" ? body.client_order_id.trim() : "";
+      if (!clientOrderId) {
+        return jsonResponse({ error: "client_order_id is required to confirm payment." }, 400);
+      }
+
+      const result = await confirmPayment(clientOrderId);
+      return jsonResponse({ status: "payment_confirmation", ...result }, result.confirmed ? 200 : 409);
+    }
+
     if (body?.confirm_delivery === true) {
       const clientOrderId = typeof body?.client_order_id === "string" ? body.client_order_id.trim() : "";
       if (!clientOrderId) {
@@ -856,8 +904,11 @@ serve(async (req: Request) => {
 
       const { data: pending, error: pendingError } = await db
         .from("orders")
-        .select("client_order_id, phone_number, plan_name, duration_days, total_sachets, net_amount, location, gym, created_at, auto_renew")
-        .is("confirmed_at", null)
+        .select("client_order_id, phone_number, plan_name, duration_days, total_sachets, net_amount, location, gym, created_at, auto_renew, confirmed_at, status")
+        // "Pending" now means not fully processed yet — either delivery or
+        // payment (or both) still outstanding. An order only drops off this
+        // list once it's both delivered AND marked paid.
+        .or("confirmed_at.is.null,status.is.null,status.neq.paid")
         .order("created_at", { ascending: true })
         .limit(100);
 

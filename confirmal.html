@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pumping Iron — Confirm Deliveries</title>
+<title>Pumping Iron — Confirm Orders</title>
 <meta name="robots" content="noindex, nofollow">
 <style>
   :root {
@@ -76,8 +76,8 @@
 </head>
 <body>
 <div class="container">
-  <h1>Confirm Deliveries</h1>
-  <p class="subtitle">Internal tool — not linked from the public site.</p>
+  <h1>Confirm Orders</h1>
+  <p class="subtitle">Internal tool — not linked from the public site. Delivery and payment are confirmed independently; an order clears the list once both are done.</p>
 
   <div class="card" id="auth-card">
     <label style="font-size:0.85rem; color:var(--text-secondary); display:block; margin-bottom:0.5rem;">Admin Secret</label>
@@ -137,7 +137,7 @@
       if (json.error) throw new Error(json.error);
 
       document.getElementById('orders-card').style.display = 'block';
-      renderOrders(json.orders || [], secret);
+      renderOrders(json.orders || []);
     } catch (err) {
       authStatus.textContent = err.message || 'Failed to load orders.';
       authStatus.className = 'status-msg error';
@@ -150,34 +150,48 @@
     return new Date(d.getTime() - offset * 60000).toISOString().slice(0, 10);
   }
 
-  function renderOrders(orders, secret) {
+  function renderOrders(orders) {
     const list = document.getElementById('orders-list');
     if (orders.length === 0) {
       list.innerHTML = '<div class="empty-state">No pending orders \u2014 all caught up.</div>';
       return;
     }
 
-    list.innerHTML = orders.map(o => `
+    list.innerHTML = orders.map(o => {
+      const delivered = !!o.confirmed_at;
+      const paid = o.status === 'paid';
+
+      return `
       <div class="order-row" id="row-${o.client_order_id}">
         <div class="order-meta">
           <strong>${o.phone_number}</strong> \u2014 ${o.plan_name || 'Order'}<br>
           ${o.duration_days} days, ${o.total_sachets} sachets, ${formatKES(o.net_amount)}<br>
           ${o.location || ''}${o.gym ? ' (' + o.gym + ')' : ''}${o.auto_renew ? ' \u00b7 \ud83d\udd01 auto-renew' : ''}<br>
-          <span style="color:var(--text-muted);">Placed ${new Date(o.created_at).toLocaleDateString('en-KE', { day: 'numeric', month: 'short' })}</span>
+          <span style="color:var(--text-muted);">Placed ${new Date(o.created_at).toLocaleDateString('en-KE', { day: 'numeric', month: 'short' })}</span><br>
+          <span style="color:${delivered ? 'var(--accent-green)' : 'var(--text-muted)'};">${delivered ? '\u2713 Delivered' : '\u25cb Not yet delivered'}</span>
+          &nbsp;\u00b7&nbsp;
+          <span style="color:${paid ? 'var(--accent-green)' : 'var(--text-muted)'};">${paid ? '\u2713 Paid' : '\u25cb Not yet paid'}</span>
         </div>
         <div style="display:flex; flex-direction:column; gap:0.4rem; align-items:flex-end;">
-          <label style="font-size:0.72rem; color:var(--text-muted);">
-            Picked up on
-            <input type="date" id="pickup-${o.client_order_id}" value="${todayLocalISO()}" max="${todayLocalISO()}" style="width:auto; padding:0.3rem 0.5rem; font-size:0.8rem; margin-left:0.3rem;">
-          </label>
-          <button onclick="confirmOrder('${o.client_order_id}', '${secret}')" id="btn-${o.client_order_id}">Confirm</button>
+          ${!delivered ? `
+            <label style="font-size:0.72rem; color:var(--text-muted);">
+              Picked up on
+              <input type="date" id="pickup-${o.client_order_id}" value="${todayLocalISO()}" max="${todayLocalISO()}" style="width:auto; padding:0.3rem 0.5rem; font-size:0.8rem; margin-left:0.3rem;">
+            </label>
+            <button onclick="confirmDeliveryAction('${o.client_order_id}')" id="deliver-btn-${o.client_order_id}">Confirm Delivery</button>
+          ` : ''}
+          ${!paid ? `
+            <button onclick="confirmPaymentAction('${o.client_order_id}')" id="pay-btn-${o.client_order_id}">Confirm Payment</button>
+          ` : ''}
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
   }
 
-  async function confirmOrder(clientOrderId, secret) {
-    const btn = document.getElementById(`btn-${clientOrderId}`);
+  async function confirmDeliveryAction(clientOrderId) {
+    const secret = getSecret();
+    const btn = document.getElementById(`deliver-btn-${clientOrderId}`);
     const dateInput = document.getElementById(`pickup-${clientOrderId}`);
     const pickupDate = dateInput ? dateInput.value : '';
 
@@ -189,19 +203,41 @@
         confirm_delivery: true,
         client_order_id: clientOrderId,
         pickup_date: pickupDate || undefined,
+        admin_secret: secret,
       });
       if (!json.confirmed) throw new Error(json.reason || json.error || 'Confirmation failed.');
 
-      const row = document.getElementById(`row-${clientOrderId}`);
-      if (row) {
-        row.style.opacity = '0.5';
-        row.querySelector('.order-meta').innerHTML += `<br><span style="color:var(--accent-green);">\u2713 Confirmed (picked up ${pickupDate || 'today'})${json.referralCredited ? ' \u00b7 referral credit awarded' : ''}</span>`;
-      }
-      btn.textContent = 'Confirmed';
+      // Re-fetch rather than patch the row in place — the row's other
+      // action (payment) may still be outstanding, and the fresh list is
+      // the simplest way to reflect that correctly.
+      await loadPendingOrders();
     } catch (err) {
       btn.disabled = false;
-      btn.textContent = 'Confirm';
+      btn.textContent = 'Confirm Delivery';
       alert(err.message || 'Failed to confirm delivery.');
+    }
+  }
+
+  async function confirmPaymentAction(clientOrderId) {
+    const secret = getSecret();
+    const btn = document.getElementById(`pay-btn-${clientOrderId}`);
+
+    btn.disabled = true;
+    btn.textContent = 'Confirming...';
+
+    try {
+      const json = await callOrderHandler({
+        confirm_payment: true,
+        client_order_id: clientOrderId,
+        admin_secret: secret,
+      });
+      if (!json.confirmed) throw new Error(json.reason || json.error || 'Confirmation failed.');
+
+      await loadPendingOrders();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Confirm Payment';
+      alert(err.message || 'Failed to confirm payment.');
     }
   }
 </script>
