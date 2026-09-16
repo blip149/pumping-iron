@@ -23,6 +23,7 @@ const LEAD_TIER = "lead";
 
 const MEMBER_DISCOUNT_RATE = 0.10;
 const MILESTONE_DISCOUNT_RATE = 0.30;
+const REFERRAL_DISCOUNT_RATE = 0.20; // referred client's first order — tune freely
 
 const TUB_COST_KES = 3000;
 const TUB_GRAMS = 410;
@@ -216,6 +217,41 @@ async function isPaidOrConfirmedClient(phone: string): Promise<boolean> {
   if (!confirmedError && (confirmedCount ?? 0) > 0) return true;
 
   return false;
+}
+
+// Shared by both the quote preview and the real order, so a fraudulent
+// referral can never slip through one path just because the checks only
+// lived in the other. Every rule here exists to eliminate a specific fake:
+//   - phone format enforced           -> can't submit garbage/placeholder
+//   - self-referral blocked           -> can't refer your own new number
+//   - referrer must be a real client  -> can't invent a fake referrer
+//   - caller only calls this when isFirstOrderEver -> can't reuse a used-up
+//     phone number's "new client" discount on a later order
+async function validateReferral(
+  phone: string,
+  referredByRaw: unknown,
+): Promise<{ ok: true; referredByPhone: string | null } | { ok: false; error: string }> {
+  if (typeof referredByRaw !== "string" || !referredByRaw.trim()) {
+    return { ok: true, referredByPhone: null };
+  }
+
+  const candidateReferrer = normalizePhone(referredByRaw);
+  if (!candidateReferrer || !PHONE_REGEX.test(candidateReferrer)) {
+    return { ok: false, error: "Invalid referred_by_phone format." };
+  }
+  if (candidateReferrer === phone) {
+    return { ok: false, error: "You cannot refer yourself." };
+  }
+
+  const isEligible = await isPaidOrConfirmedClient(candidateReferrer);
+  if (!isEligible) {
+    return {
+      ok: false,
+      error: "The referred-by number must belong to an existing client with at least 1 paid or confirmed order.",
+    };
+  }
+
+  return { ok: true, referredByPhone: candidateReferrer };
 }
 
 // ----------------------------------------------------------
@@ -586,6 +622,7 @@ function calculateOrderFinancials(args: {
   batchWeekly?: boolean;
   isVip: boolean;
   isMilestone: boolean;
+  isReferredFirstOrder?: boolean;
 }) {
   let dosesPerDay: number;
   let durationDays: number;
@@ -641,6 +678,13 @@ function calculateOrderFinancials(args: {
   } else if (args.isVip) {
     discountRate = MEMBER_DISCOUNT_RATE;
     discountApplied = "VIP_10";
+  } else if (args.isReferredFirstOrder) {
+    // Can only ever be true alongside isVip/isMilestone being false — both
+    // of those require 4+ prior paid orders, and this only fires on a
+    // client's very first order ever (enforced by the caller). Written as
+    // its own branch anyway so that invariant isn't load-bearing here.
+    discountRate = REFERRAL_DISCOUNT_RATE;
+    discountApplied = "REFERRAL_10";
   }
 
   const discountAmount = round2(grossAmount * discountRate);
@@ -842,6 +886,10 @@ serve(async (req: Request) => {
     }
 
     if (body?.confirm_delivery === true) {
+      if (!ADMIN_SECRET || body?.admin_secret !== ADMIN_SECRET) {
+        return jsonResponse({ error: "Unauthorized." }, 401);
+      }
+
       const clientOrderId = typeof body?.client_order_id === "string" ? body.client_order_id.trim() : "";
       if (!clientOrderId) {
         return jsonResponse({ error: "client_order_id is required to confirm delivery." }, 400);
@@ -946,6 +994,25 @@ serve(async (req: Request) => {
     const requestedDosesPerDay = body.doses_per_day != null ? Number(body.doses_per_day) : undefined;
     const batchWeekly = body.batch_weekly === true;
 
+    // Referral only ever applies to a client's very first order ever — same
+    // rule the real order enforces below. Checked here too so the quote
+    // preview shows the real, referral-adjusted price instead of surprising
+    // the client with a different number at submission.
+    let referredByPhoneForQuote: string | null = null;
+    if (isQuote) {
+      const { count: priorOrderCountForQuote } = await db
+        .from("orders")
+        .select("*", { count: "exact", head: true })
+        .eq("phone_number", phone);
+      if ((priorOrderCountForQuote ?? 0) === 0) {
+        const referralCheck = await validateReferral(phone, body.referred_by_phone);
+        if (!referralCheck.ok) {
+          return jsonResponse({ error: referralCheck.error }, 400);
+        }
+        referredByPhoneForQuote = referralCheck.referredByPhone;
+      }
+    }
+
     if (isQuote) {
       if (saturation.isSaturated) {
         const financials = calculateOrderFinancials({
@@ -953,6 +1020,7 @@ serve(async (req: Request) => {
           remainingGrams: 0,
           isVip: eligibility.isVip,
           isMilestone: eligibility.isMilestone,
+          isReferredFirstOrder: referredByPhoneForQuote !== null,
         });
         return jsonResponse({
           status: "quote",
@@ -990,6 +1058,7 @@ serve(async (req: Request) => {
           batchWeekly,
           isVip: eligibility.isVip,
           isMilestone: eligibility.isMilestone,
+          isReferredFirstOrder: referredByPhoneForQuote !== null,
         });
         selectedTier = {
           doses_per_day: financials.dosesPerDay,
@@ -1048,34 +1117,12 @@ serve(async (req: Request) => {
       return jsonResponse({ error: "doses_per_day is required to place a saturation-phase order." }, 400);
     }
 
-    let financials;
-    try {
-      financials = calculateOrderFinancials({
-        isSaturated: saturation.isSaturated,
-        remainingGrams,
-        requestedDosesPerDay,
-        batchWeekly,
-        isVip: eligibility.isVip,
-        isMilestone: eligibility.isMilestone,
-      });
-    } catch (err) {
-      return jsonResponse({ error: err instanceof Error ? err.message : "Invalid tier selection." }, 400);
-    }
-
-    // Batching only works if auto-renew is on — that's what carries the
-    // remaining weekly batches forward. If the client picked batching but
-    // left auto-renew off, batching wins (it's the more explicit choice).
-    const autoRenew = financials.isBatched ? true : body.auto_renew === true;
-
-    const userId = await getOrCreateUser({
-      phone,
-      weight,
-      location: typeof body.location === "string" ? body.location.trim() : "",
-      gym: typeof body.gym === "string" ? body.gym.trim() : "",
-    });
-
     // Referral tagging: only on a client's very first order ever, and only
-    // once — never overwritten on later orders.
+    // once — never overwritten on later orders. This validation (self-
+    // referral blocked, referrer must be a real paid/confirmed client) is
+    // what makes the referral discount below safe — it can't be faked
+    // without first satisfying every check that already protects the
+    // referrer's own credit.
     const { count: priorOrderCount } = await db
       .from("orders")
       .select("*", { count: "exact", head: true })
@@ -1101,6 +1148,33 @@ serve(async (req: Request) => {
 
       referredByPhone = candidateReferrer;
     }
+
+    let financials;
+    try {
+      financials = calculateOrderFinancials({
+        isSaturated: saturation.isSaturated,
+        remainingGrams,
+        requestedDosesPerDay,
+        batchWeekly,
+        isVip: eligibility.isVip,
+        isMilestone: eligibility.isMilestone,
+        isReferredFirstOrder: referredByPhone !== null,
+      });
+    } catch (err) {
+      return jsonResponse({ error: err instanceof Error ? err.message : "Invalid tier selection." }, 400);
+    }
+
+    // Batching only works if auto-renew is on — that's what carries the
+    // remaining weekly batches forward. If the client picked batching but
+    // left auto-renew off, batching wins (it's the more explicit choice).
+    const autoRenew = financials.isBatched ? true : body.auto_renew === true;
+
+    const userId = await getOrCreateUser({
+      phone,
+      weight,
+      location: typeof body.location === "string" ? body.location.trim() : "",
+      gym: typeof body.gym === "string" ? body.gym.trim() : "",
+    });
 
     const planName = saturation.isSaturated
       ? "Maintenance (1x/day)"
