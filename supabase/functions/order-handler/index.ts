@@ -994,17 +994,16 @@ serve(async (req: Request) => {
     const requestedDosesPerDay = body.doses_per_day != null ? Number(body.doses_per_day) : undefined;
     const batchWeekly = body.batch_weekly === true;
 
-    // Referral only ever applies to a client's very first order ever — same
-    // rule the real order enforces below. Checked here too so the quote
-    // preview shows the real, referral-adjusted price instead of surprising
-    // the client with a different number at submission.
+    // Referral only ever applies to a client's first PAID order — same rule
+    // the real order enforces below, and reusing eligibility.streakCount
+    // (paid orders only) for the same reason: an abandoned/pending prior
+    // attempt shouldn't disqualify a genuine first-time buyer. Checked here
+    // too so the quote preview shows the real, referral-adjusted price
+    // instead of surprising the client with a different number at
+    // submission.
     let referredByPhoneForQuote: string | null = null;
     if (isQuote) {
-      const { count: priorOrderCountForQuote } = await db
-        .from("orders")
-        .select("*", { count: "exact", head: true })
-        .eq("phone_number", phone);
-      if ((priorOrderCountForQuote ?? 0) === 0) {
+      if (eligibility.streakCount === 0) {
         const referralCheck = await validateReferral(phone, body.referred_by_phone);
         if (!referralCheck.ok) {
           return jsonResponse({ error: referralCheck.error }, 400);
@@ -1117,17 +1116,17 @@ serve(async (req: Request) => {
       return jsonResponse({ error: "doses_per_day is required to place a saturation-phase order." }, 400);
     }
 
-    // Referral tagging: only on a client's very first order ever, and only
-    // once — never overwritten on later orders. This validation (self-
-    // referral blocked, referrer must be a real paid/confirmed client) is
-    // what makes the referral discount below safe — it can't be faked
-    // without first satisfying every check that already protects the
+    // Referral tagging: only on a client's first PAID order, and only
+    // once — never overwritten on later orders. Deliberately reuses
+    // eligibility.streakCount (paid orders only) rather than counting every
+    // row ever inserted for this phone — an abandoned/pending order from an
+    // earlier attempt shouldn't disqualify a genuine first-time buyer from
+    // the referral discount just because a row exists. This validation
+    // (self-referral blocked, referrer must be a real paid/confirmed
+    // client) is what makes the referral discount below safe — it can't be
+    // faked without first satisfying every check that already protects the
     // referrer's own credit.
-    const { count: priorOrderCount } = await db
-      .from("orders")
-      .select("*", { count: "exact", head: true })
-      .eq("phone_number", phone);
-    const isFirstOrderEver = (priorOrderCount ?? 0) === 0;
+    const isFirstOrderEver = eligibility.streakCount === 0;
 
     let referredByPhone: string | null = null;
     if (isFirstOrderEver && typeof body.referred_by_phone === "string" && body.referred_by_phone.trim()) {
