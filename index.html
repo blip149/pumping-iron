@@ -942,6 +942,17 @@
 
   const referrerCache = {};
 
+  // Returns the "Referred By" number ONLY if it's already been verified
+  // (present in referrerCache with valid: true). Quote calls use this so
+  // the price preview reflects the referral discount the same way the
+  // final order does — without re-triggering validation mid-quote.
+  function getVerifiedReferredBy() {
+    const raw = document.getElementById('referredBy')?.value.trim();
+    if (!raw) return undefined;
+    const clean = normalizePhone(raw);
+    return (clean && referrerCache[clean]?.valid) ? clean : undefined;
+  }
+
   function clearReferrerFeedback() {
     const fb = document.getElementById('referred-by-feedback');
     if (fb) {
@@ -1110,6 +1121,7 @@
         quote_only: true,
         phone_number: phone,
         body_weight_kg: weight,
+        referred_by_phone: getVerifiedReferredBy(),
       });
 
       lastSaturation = json.saturation;
@@ -1165,6 +1177,7 @@
         body_weight_kg: weight,
         doses_per_day: dosesPerDay,
         batch_weekly: false,
+        referred_by_phone: getVerifiedReferredBy(),
       });
 
       const tier = json.selected_tier;
@@ -1209,6 +1222,7 @@
         body_weight_kg: weight,
         doses_per_day: lastSelectedDosesPerDay,
         batch_weekly: batchWeekly,
+        referred_by_phone: getVerifiedReferredBy(),
       });
 
       const tier = json.selected_tier;
