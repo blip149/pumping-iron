@@ -684,7 +684,7 @@ function calculateOrderFinancials(args: {
     // client's very first order ever (enforced by the caller). Written as
     // its own branch anyway so that invariant isn't load-bearing here.
     discountRate = REFERRAL_DISCOUNT_RATE;
-    discountApplied = "REFERRAL_10";
+    discountApplied = "REFERRAL_20";
   }
 
   const discountAmount = round2(grossAmount * discountRate);
