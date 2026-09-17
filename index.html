@@ -713,7 +713,7 @@
   function formatTierName(tierCode) {
     if (tierCode === 'vip_10') return '10% VIP Discount';
     if (tierCode === 'milestone_30') return '30% Milestone Discount';
-    if (tierCode === 'REFERREL_20') return '20% Newbie discount';
+    if (tierCode === 'REFERRAL_20') return '20% Newbie discount';
     return 'Standard Rate';
   }
 
@@ -943,14 +943,25 @@
 
   const referrerCache = {};
 
-  // Returns the "Referred By" number ONLY if it's already been verified
+  // A vanity referral code (e.g. "PM003") doesn't look like a phone number
+  // at all, so don't run it through phone reformatting — just upper-case
+  // it and let the backend resolve known codes. Anything with 9+ digits is
+  // treated as a real phone number as before.
+  function normalizeReferrerInput(raw) {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) return '';
+    const digits = trimmed.replace(/[^0-9]/g, '');
+    return digits.length >= 9 ? normalizePhone(trimmed) : trimmed.toUpperCase();
+  }
+
+  // Returns the "Referred By" value ONLY if it's already been verified
   // (present in referrerCache with valid: true). Quote calls use this so
   // the price preview reflects the referral discount the same way the
   // final order does — without re-triggering validation mid-quote.
   function getVerifiedReferredBy() {
     const raw = document.getElementById('referredBy')?.value.trim();
     if (!raw) return undefined;
-    const clean = normalizePhone(raw);
+    const clean = normalizeReferrerInput(raw);
     return (clean && referrerCache[clean]?.valid) ? clean : undefined;
   }
 
@@ -974,14 +985,15 @@
       return { valid: true, empty: true };
     }
 
-    const cleanRef = normalizePhone(rawRef);
+    const cleanRef = normalizeReferrerInput(rawRef);
     const cleanPhone = phoneInput ? normalizePhone(phoneInput.value.trim()) : '';
+    const refLooksLikePhone = /^\+254[17]\d{8}$/.test(cleanRef);
 
     if (!cleanRef) {
       if (fb) {
         fb.style.display = 'block';
         fb.style.color = 'var(--primary)';
-        fb.textContent = '⚠️ Please enter a valid Kenya phone number (e.g. 0712345678).';
+        fb.textContent = '⚠️ Please enter a valid Kenya phone number (e.g. 0712345678) or referral code.';
       }
       return { valid: false, error: 'Invalid phone format' };
     }
@@ -1016,7 +1028,7 @@
         });
         if (json?.status === 'referrer_validation') {
           isExisting = json.valid === true;
-        } else {
+        } else if (refLooksLikePhone) {
           const [mem, sat] = await Promise.allSettled([
             fetchMembership(cleanRef),
             fetchSaturationStatus(cleanRef),
@@ -1026,13 +1038,15 @@
           isExisting = hasPaid || hasConfirmed;
         }
       } catch (innerErr) {
-        const [mem, sat] = await Promise.allSettled([
-          fetchMembership(cleanRef),
-          fetchSaturationStatus(cleanRef),
-        ]);
-        const hasPaid = mem.status === 'fulfilled' && (mem.value?.completedOrders > 0);
-        const hasConfirmed = sat.status === 'fulfilled' && !sat.value?.isNewClient;
-        isExisting = hasPaid || hasConfirmed;
+        if (refLooksLikePhone) {
+          const [mem, sat] = await Promise.allSettled([
+            fetchMembership(cleanRef),
+            fetchSaturationStatus(cleanRef),
+          ]);
+          const hasPaid = mem.status === 'fulfilled' && (mem.value?.completedOrders > 0);
+          const hasConfirmed = sat.status === 'fulfilled' && !sat.value?.isNewClient;
+          isExisting = hasPaid || hasConfirmed;
+        }
       }
 
       const result = {
@@ -1255,7 +1269,7 @@
     const weight = parseFloat(document.getElementById('weight').value);
     const location = document.getElementById('location').value.trim();
     const gym = document.getElementById('gym').value.trim();
-    const referredBy = normalizePhone(document.getElementById('referredBy').value.trim());
+    const referredBy = normalizeReferrerInput(document.getElementById('referredBy').value.trim());
     const autoRenew = batchWeekly ? true : document.getElementById('autoRenew').checked;
     const m = lastMembership;
 

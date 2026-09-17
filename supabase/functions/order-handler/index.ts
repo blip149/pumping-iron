@@ -25,6 +25,16 @@ const MEMBER_DISCOUNT_RATE = 0.10;
 const MILESTONE_DISCOUNT_RATE = 0.30;
 const REFERRAL_DISCOUNT_RATE = 0.20; // referred client's first order — tune freely
 
+// Vanity/promo referral codes — case-insensitive, mapped straight to the
+// real phone number they should credit. These skip the "referrer must
+// already have a paid/confirmed order" check below: they're hand-issued by
+// the business itself, not a customer number that has to prove itself
+// first. Add more codes here as needed; everything downstream (quote
+// preview, order creation, discount math) picks them up automatically.
+const SPECIAL_REFERRAL_CODES: Record<string, string> = {
+  "PM003": "+254XXXXXXXXX", // TODO: set to the real phone number PM003 should credit
+};
+
 const TUB_COST_KES = 3000;
 const TUB_GRAMS = 410;
 const PPG = TUB_COST_KES / TUB_GRAMS;
@@ -197,6 +207,18 @@ async function getIroncladEligibility(phone: string) {
   return { streakCount: paidCount, isVip, isMilestone };
 }
 
+// Resolves whatever the client typed into "Referred By" into an actual
+// phone number. A recognized vanity code (e.g. "PM003") maps straight to
+// its configured phone and is flagged so callers can skip the
+// paid/confirmed-client check; anything else is treated as a normal phone
+// number and normalized as usual.
+function resolveReferralInput(raw: string): { phone: string; isSpecialCode: boolean } {
+  const trimmed = raw.trim();
+  const special = SPECIAL_REFERRAL_CODES[trimmed.toUpperCase()];
+  if (special) return { phone: special, isSpecialCode: true };
+  return { phone: normalizePhone(trimmed), isSpecialCode: false };
+}
+
 async function isPaidOrConfirmedClient(phone: string): Promise<boolean> {
   // Check if candidate referrer has at least 1 paid order
   const { count: paidCount, error: paidError } = await db
@@ -227,15 +249,24 @@ async function isPaidOrConfirmedClient(phone: string): Promise<boolean> {
 //   - referrer must be a real client  -> can't invent a fake referrer
 //   - caller only calls this when isFirstOrderEver -> can't reuse a used-up
 //     phone number's "new client" discount on a later order
+//
+// referredByPhone vs discountEligible are deliberately separate: a special
+// code (see SPECIAL_REFERRAL_CODES) grants the discount (discountEligible)
+// but is never stored as referred_by_phone, so it can never be picked up by
+// the referral-credit logic later — no one accrues credit for a code that
+// isn't a real customer referral.
 async function validateReferral(
   phone: string,
   referredByRaw: unknown,
-): Promise<{ ok: true; referredByPhone: string | null } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; referredByPhone: string | null; discountEligible: boolean }
+  | { ok: false; error: string }
+> {
   if (typeof referredByRaw !== "string" || !referredByRaw.trim()) {
-    return { ok: true, referredByPhone: null };
+    return { ok: true, referredByPhone: null, discountEligible: false };
   }
 
-  const candidateReferrer = normalizePhone(referredByRaw);
+  const { phone: candidateReferrer, isSpecialCode } = resolveReferralInput(referredByRaw);
   if (!candidateReferrer || !PHONE_REGEX.test(candidateReferrer)) {
     return { ok: false, error: "Invalid referred_by_phone format." };
   }
@@ -243,15 +274,21 @@ async function validateReferral(
     return { ok: false, error: "You cannot refer yourself." };
   }
 
-  const isEligible = await isPaidOrConfirmedClient(candidateReferrer);
-  if (!isEligible) {
-    return {
-      ok: false,
-      error: "The referred-by number must belong to an existing client with at least 1 paid or confirmed order.",
-    };
+  if (!isSpecialCode) {
+    const isEligible = await isPaidOrConfirmedClient(candidateReferrer);
+    if (!isEligible) {
+      return {
+        ok: false,
+        error: "The referred-by number must belong to an existing client with at least 1 paid or confirmed order.",
+      };
+    }
   }
 
-  return { ok: true, referredByPhone: candidateReferrer };
+  return {
+    ok: true,
+    referredByPhone: isSpecialCode ? null : candidateReferrer,
+    discountEligible: true,
+  };
 }
 
 // ----------------------------------------------------------
@@ -926,14 +963,15 @@ serve(async (req: Request) => {
     }
 
     if (body?.validate_referrer === true) {
-      const phone = normalizePhone(body?.phone_number);
+      const rawInput = typeof body?.phone_number === "string" ? body.phone_number : "";
       const clientPhone = normalizePhone(body?.client_phone);
+      const { phone, isSpecialCode } = resolveReferralInput(rawInput);
 
       if (!phone || !PHONE_REGEX.test(phone)) {
         return jsonResponse({
           status: "referrer_validation",
           valid: false,
-          error: "Please enter a valid phone number.",
+          error: "Please enter a valid phone number or referral code.",
         }, 200);
       }
 
@@ -945,7 +983,7 @@ serve(async (req: Request) => {
         }, 200);
       }
 
-      const isEligible = await isPaidOrConfirmedClient(phone);
+      const isEligible = isSpecialCode ? true : await isPaidOrConfirmedClient(phone);
       return jsonResponse({
         status: "referrer_validation",
         valid: isEligible,
@@ -1001,14 +1039,14 @@ serve(async (req: Request) => {
     // too so the quote preview shows the real, referral-adjusted price
     // instead of surprising the client with a different number at
     // submission.
-    let referredByPhoneForQuote: string | null = null;
+    let referralDiscountEligibleForQuote = false;
     if (isQuote) {
       if (eligibility.streakCount === 0) {
         const referralCheck = await validateReferral(phone, body.referred_by_phone);
         if (!referralCheck.ok) {
           return jsonResponse({ error: referralCheck.error }, 400);
         }
-        referredByPhoneForQuote = referralCheck.referredByPhone;
+        referralDiscountEligibleForQuote = referralCheck.discountEligible;
       }
     }
 
@@ -1019,7 +1057,7 @@ serve(async (req: Request) => {
           remainingGrams: 0,
           isVip: eligibility.isVip,
           isMilestone: eligibility.isMilestone,
-          isReferredFirstOrder: referredByPhoneForQuote !== null,
+          isReferredFirstOrder: referralDiscountEligibleForQuote,
         });
         return jsonResponse({
           status: "quote",
@@ -1057,7 +1095,7 @@ serve(async (req: Request) => {
           batchWeekly,
           isVip: eligibility.isVip,
           isMilestone: eligibility.isMilestone,
-          isReferredFirstOrder: referredByPhoneForQuote !== null,
+          isReferredFirstOrder: referralDiscountEligibleForQuote,
         });
         selectedTier = {
           doses_per_day: financials.dosesPerDay,
@@ -1129,23 +1167,14 @@ serve(async (req: Request) => {
     const isFirstOrderEver = eligibility.streakCount === 0;
 
     let referredByPhone: string | null = null;
-    if (isFirstOrderEver && typeof body.referred_by_phone === "string" && body.referred_by_phone.trim()) {
-      const candidateReferrer = normalizePhone(body.referred_by_phone);
-      if (!candidateReferrer || !PHONE_REGEX.test(candidateReferrer)) {
-        return jsonResponse({ error: "Invalid referred_by_phone format." }, 400);
+    let referralDiscountEligible = false;
+    if (isFirstOrderEver) {
+      const referralCheck = await validateReferral(phone, body.referred_by_phone);
+      if (!referralCheck.ok) {
+        return jsonResponse({ error: referralCheck.error }, 400);
       }
-      if (candidateReferrer === phone) {
-        return jsonResponse({ error: "You cannot refer yourself." }, 400);
-      }
-
-      const isEligible = await isPaidOrConfirmedClient(candidateReferrer);
-      if (!isEligible) {
-        return jsonResponse({
-          error: "The referred-by number must belong to an existing client with at least 1 paid or confirmed order.",
-        }, 400);
-      }
-
-      referredByPhone = candidateReferrer;
+      referredByPhone = referralCheck.referredByPhone;
+      referralDiscountEligible = referralCheck.discountEligible;
     }
 
     let financials;
@@ -1157,7 +1186,7 @@ serve(async (req: Request) => {
         batchWeekly,
         isVip: eligibility.isVip,
         isMilestone: eligibility.isMilestone,
-        isReferredFirstOrder: referredByPhone !== null,
+        isReferredFirstOrder: referralDiscountEligible,
       });
     } catch (err) {
       return jsonResponse({ error: err instanceof Error ? err.message : "Invalid tier selection." }, 400);
