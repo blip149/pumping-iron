@@ -562,7 +562,7 @@
         <div class="full-width" style="display:flex; align-items:flex-start; gap:0.6rem; margin-top:0.25rem;">
           <input type="checkbox" id="autoRenew" checked style="width:18px; height:18px; margin-top:0.15rem; accent-color: var(--accent-gold);">
           <label for="autoRenew" style="text-transform:none; letter-spacing:normal; font-size:0.85rem; color:var(--text-secondary); margin-bottom:0;">
-            🔁 Auto-renew when this runs out. We'll message you on WhatsApp to reorder — cancel anytime from the lookup below.
+            🔁 Auto-renew  — cancel anytime from the lookup below.
           </label>
         </div>
       </div>
@@ -1364,7 +1364,7 @@
           `Order Number: #${m.nextOrderNumber}`,
           `Total: ${formatKES(confirmedTotal)}`,
           `Location: ${location}${gym ? ', ' + gym : ''}`,
-          `Auto-Renew: ${autoRenew ? 'Yes — please message me to reorder when I run out' : 'No'}`,
+          `Auto-Renew: ${autoRenew ? 'Yes' : 'No'}`,
           ...(isVerifiedReferrer ? [`Referred by: ${referredBy}`] : []),
         ].join('\n');
 

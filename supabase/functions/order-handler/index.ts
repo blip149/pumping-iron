@@ -25,15 +25,18 @@ const MEMBER_DISCOUNT_RATE = 0.10;
 const MILESTONE_DISCOUNT_RATE = 0.30;
 const REFERRAL_DISCOUNT_RATE = 0.20; // referred client's first order — tune freely
 
-// Vanity/promo referral codes — case-insensitive, mapped straight to the
-// real phone number they should credit. These skip the "referrer must
-// already have a paid/confirmed order" check below: they're hand-issued by
-// the business itself, not a customer number that has to prove itself
-// first. Add more codes here as needed; everything downstream (quote
-// preview, order creation, discount math) picks them up automatically.
-const SPECIAL_REFERRAL_CODES: Record<string, string> = {
-  "PM003": "+254XXXXXXXXX", // TODO: set to the real phone number PM003 should credit
-};
+// Admin/promo referral codes — case-insensitive, no phone number attached.
+// Using one of these grants the referral discount with none of the
+// phone-based checks: no format check, no self-referral check, and no
+// "referrer must have a paid/confirmed order" lookup. Nothing is ever
+// stored as referred_by_phone for these, so no one accrues referral credit
+// from them either — they're purely a discount lever. Add more here as
+// needed.
+const SPECIAL_REFERRAL_CODES = new Set(["PM003"]);
+
+function isSpecialReferralCode(raw: string): boolean {
+  return SPECIAL_REFERRAL_CODES.has(raw.trim().toUpperCase());
+}
 
 const TUB_COST_KES = 3000;
 const TUB_GRAMS = 410;
@@ -207,18 +210,6 @@ async function getIroncladEligibility(phone: string) {
   return { streakCount: paidCount, isVip, isMilestone };
 }
 
-// Resolves whatever the client typed into "Referred By" into an actual
-// phone number. A recognized vanity code (e.g. "PM003") maps straight to
-// its configured phone and is flagged so callers can skip the
-// paid/confirmed-client check; anything else is treated as a normal phone
-// number and normalized as usual.
-function resolveReferralInput(raw: string): { phone: string; isSpecialCode: boolean } {
-  const trimmed = raw.trim();
-  const special = SPECIAL_REFERRAL_CODES[trimmed.toUpperCase()];
-  if (special) return { phone: special, isSpecialCode: true };
-  return { phone: normalizePhone(trimmed), isSpecialCode: false };
-}
-
 async function isPaidOrConfirmedClient(phone: string): Promise<boolean> {
   // Check if candidate referrer has at least 1 paid order
   const { count: paidCount, error: paidError } = await db
@@ -250,11 +241,8 @@ async function isPaidOrConfirmedClient(phone: string): Promise<boolean> {
 //   - caller only calls this when isFirstOrderEver -> can't reuse a used-up
 //     phone number's "new client" discount on a later order
 //
-// referredByPhone vs discountEligible are deliberately separate: a special
-// code (see SPECIAL_REFERRAL_CODES) grants the discount (discountEligible)
-// but is never stored as referred_by_phone, so it can never be picked up by
-// the referral-credit logic later — no one accrues credit for a code that
-// isn't a real customer referral.
+// An admin code (SPECIAL_REFERRAL_CODES) short-circuits all of the above:
+// no phone, no lookup, just the discount — see isSpecialReferralCode.
 async function validateReferral(
   phone: string,
   referredByRaw: unknown,
@@ -266,7 +254,11 @@ async function validateReferral(
     return { ok: true, referredByPhone: null, discountEligible: false };
   }
 
-  const { phone: candidateReferrer, isSpecialCode } = resolveReferralInput(referredByRaw);
+  if (isSpecialReferralCode(referredByRaw)) {
+    return { ok: true, referredByPhone: null, discountEligible: true };
+  }
+
+  const candidateReferrer = normalizePhone(referredByRaw);
   if (!candidateReferrer || !PHONE_REGEX.test(candidateReferrer)) {
     return { ok: false, error: "Invalid referred_by_phone format." };
   }
@@ -274,21 +266,15 @@ async function validateReferral(
     return { ok: false, error: "You cannot refer yourself." };
   }
 
-  if (!isSpecialCode) {
-    const isEligible = await isPaidOrConfirmedClient(candidateReferrer);
-    if (!isEligible) {
-      return {
-        ok: false,
-        error: "The referred-by number must belong to an existing client with at least 1 paid or confirmed order.",
-      };
-    }
+  const isEligible = await isPaidOrConfirmedClient(candidateReferrer);
+  if (!isEligible) {
+    return {
+      ok: false,
+      error: "The referred-by number must belong to an existing client with at least 1 paid or confirmed order.",
+    };
   }
 
-  return {
-    ok: true,
-    referredByPhone: isSpecialCode ? null : candidateReferrer,
-    discountEligible: true,
-  };
+  return { ok: true, referredByPhone: candidateReferrer, discountEligible: true };
 }
 
 // ----------------------------------------------------------
@@ -484,10 +470,88 @@ async function getCurrentSaturationStatus(phone: string, weightOverrideKg?: numb
 // getCurrentSaturationStatus is next called for this client — it looks up
 // this same order (by confirmed_at) and simulates forward from here.
 // ----------------------------------------------------------
+// Awards the referrer one credit the first time EITHER confirmation event
+// (delivery or payment) lands on an order that carries referred_by_phone —
+// i.e. the referred client's own first order, whichever confirmation
+// happens first. The update only succeeds once per order (it's guarded by
+// referral_credit_awarded = false), so if both events eventually fire on
+// the same order — payment now, delivery later, or vice versa — only the
+// first one actually credits the referrer.
+async function awardReferralCreditIfNeeded(orderId: string, referredByPhone: string | null): Promise<boolean> {
+  if (!referredByPhone) return false;
+
+  const { data: claimed, error: claimError } = await db
+    .from("orders")
+    .update({ referral_credit_awarded: true })
+    .eq("id", orderId)
+    .eq("referral_credit_awarded", false)
+    .select("id")
+    .maybeSingle();
+
+  if (claimError || !claimed) return false;
+
+  const { data: referrerRow, error: referrerError } = await db
+    .from("users")
+    .select("id, referral_credits")
+    .eq("phone_number", referredByPhone)
+    .maybeSingle();
+
+  if (referrerError || !referrerRow) return false;
+
+  const { error: creditError } = await db
+    .from("users")
+    .update({ referral_credits: (referrerRow.referral_credits ?? 0) + 1 })
+    .eq("id", referrerRow.id);
+
+  return !creditError;
+}
+
+// Redeeming is the counterpart to awarding: it's what actually spends the
+// credits once you've fulfilled a claim (handed over the free sachet). The
+// update is guarded by "referral_credits still equals what we just read" so
+// two redemption taps racing each other can't both succeed against a stale
+// balance — the second one fails cleanly instead of double-spending.
+async function redeemReferralCredits(
+  phone: string,
+  creditsToRedeem: number,
+): Promise<
+  | { ok: true; redeemed: number; remaining: number }
+  | { ok: false; error: string }
+> {
+  const { data: userRow, error: userError } = await db
+    .from("users")
+    .select("id, referral_credits")
+    .eq("phone_number", phone)
+    .maybeSingle();
+
+  if (userError) return { ok: false, error: `User lookup failed: ${userError.message}` };
+  if (!userRow) return { ok: false, error: "No user found for that phone number." };
+
+  const currentCredits = userRow.referral_credits ?? 0;
+  if (creditsToRedeem > currentCredits) {
+    return { ok: false, error: `Only ${currentCredits} credit(s) available — cannot redeem ${creditsToRedeem}.` };
+  }
+
+  const remaining = currentCredits - creditsToRedeem;
+
+  const { data: updated, error: updateError } = await db
+    .from("users")
+    .update({ referral_credits: remaining })
+    .eq("id", userRow.id)
+    .eq("referral_credits", currentCredits)
+    .select("id")
+    .maybeSingle();
+
+  if (updateError) return { ok: false, error: `Update failed: ${updateError.message}` };
+  if (!updated) return { ok: false, error: "Credit balance changed just now — please retry." };
+
+  return { ok: true, redeemed: creditsToRedeem, remaining };
+}
+
 async function confirmDelivery(clientOrderId: string, pickupDateOverride?: string) {
   const { data: order, error: orderError } = await db
     .from("orders")
-    .select("id, phone_number, created_at, confirmed_at, grams_delivered")
+    .select("id, phone_number, created_at, confirmed_at, grams_delivered, referred_by_phone")
     .eq("client_order_id", clientOrderId)
     .maybeSingle();
 
@@ -544,39 +608,13 @@ async function confirmDelivery(clientOrderId: string, pickupDateOverride?: strin
     .eq("id", userRow.id);
   if (updateUserError) throw new Error(`User update failed: ${updateUserError.message}`);
 
-  // Referral credit: only fires when this is NOT the client's first-ever
-  // order (their FIRST order is the only one that ever carries
-  // referred_by_phone), and only once per order (guarded by the
-  // confirmed_at check above — this function never runs twice on one order).
-  let referralCredited = false;
-  const { data: firstOrder, error: firstOrderError } = await db
-    .from("orders")
-    .select("id, referred_by_phone")
-    .eq("phone_number", order.phone_number)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (!firstOrderError && firstOrder && firstOrder.id !== order.id && firstOrder.referred_by_phone) {
-    const referrerPhone = firstOrder.referred_by_phone;
-    const { data: referrerRow, error: referrerError } = await db
-      .from("users")
-      .select("id, referral_credits")
-      .eq("phone_number", referrerPhone)
-      .maybeSingle();
-
-    if (!referrerError && referrerRow) {
-      const { error: creditError } = await db
-        .from("users")
-        .update({ referral_credits: (referrerRow.referral_credits ?? 0) + 1 })
-        .eq("id", referrerRow.id);
-
-      if (!creditError) {
-        await db.from("orders").update({ referral_credit_awarded: true }).eq("id", order.id);
-        referralCredited = true;
-      }
-    }
-  }
+  // Referral credit: awarded the moment EITHER confirmation event —
+  // delivery (here) or payment (confirmPayment) — lands on the referred
+  // client's own first order, whichever happens first. Only that first
+  // order ever carries referred_by_phone, and awardReferralCreditIfNeeded's
+  // claim update guards against the other event later double-crediting the
+  // same order.
+  const referralCredited = await awardReferralCreditIfNeeded(order.id, order.referred_by_phone ?? null);
 
   return {
     confirmed: true,
@@ -753,7 +791,7 @@ function calculateOrderFinancials(args: {
 async function confirmPayment(clientOrderId: string) {
   const { data: order, error: orderError } = await db
     .from("orders")
-    .select("id, status")
+    .select("id, status, referred_by_phone")
     .eq("client_order_id", clientOrderId)
     .maybeSingle();
 
@@ -770,7 +808,9 @@ async function confirmPayment(clientOrderId: string) {
 
   if (updateError) throw new Error(`Order update failed: ${updateError.message}`);
 
-  return { confirmed: true };
+  const referralCredited = await awardReferralCreditIfNeeded(order.id, order.referred_by_phone ?? null);
+
+  return { confirmed: true, referralCredited };
 }
 
 function membershipPayload(eligibility: { streakCount: number; isVip: boolean; isMilestone: boolean }) {
@@ -962,10 +1002,48 @@ serve(async (req: Request) => {
       }, 200);
     }
 
+    if (body?.redeem_referral_credits === true) {
+      if (!ADMIN_SECRET || body?.admin_secret !== ADMIN_SECRET) {
+        return jsonResponse({ error: "Unauthorized." }, 401);
+      }
+
+      const phone = normalizePhone(body?.phone_number);
+      if (!PHONE_REGEX.test(phone)) {
+        return jsonResponse({ error: "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX." }, 400);
+      }
+
+      const creditsToRedeem = Number(body?.credits);
+      if (!Number.isInteger(creditsToRedeem) || creditsToRedeem <= 0) {
+        return jsonResponse({ error: "credits must be a positive whole number." }, 400);
+      }
+
+      const result = await redeemReferralCredits(phone, creditsToRedeem);
+      if (!result.ok) {
+        return jsonResponse({ error: result.error }, 409);
+      }
+
+      return jsonResponse({
+        status: "referral_redeemed",
+        phone,
+        redeemed: result.redeemed,
+        remaining: result.remaining,
+      }, 200);
+    }
+
     if (body?.validate_referrer === true) {
       const rawInput = typeof body?.phone_number === "string" ? body.phone_number : "";
       const clientPhone = normalizePhone(body?.client_phone);
-      const { phone, isSpecialCode } = resolveReferralInput(rawInput);
+
+      if (isSpecialReferralCode(rawInput)) {
+        return jsonResponse({
+          status: "referrer_validation",
+          valid: true,
+          phone: rawInput.trim().toUpperCase(),
+          message: "Promo code applied — no referrer lookup needed.",
+        }, 200);
+      }
+
+      const phone = normalizePhone(rawInput);
 
       if (!phone || !PHONE_REGEX.test(phone)) {
         return jsonResponse({
@@ -983,7 +1061,7 @@ serve(async (req: Request) => {
         }, 200);
       }
 
-      const isEligible = isSpecialCode ? true : await isPaidOrConfirmedClient(phone);
+      const isEligible = await isPaidOrConfirmedClient(phone);
       return jsonResponse({
         status: "referrer_validation",
         valid: isEligible,

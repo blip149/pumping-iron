@@ -93,6 +93,24 @@
     </div>
     <div id="orders-list"></div>
   </div>
+
+  <div class="card" id="referral-card" style="display:none;">
+    <strong>Referral Credits</strong>
+    <p class="subtitle" style="margin:0.35rem 0 0.9rem;">Look up a client's balance, then redeem what you've just handed over (e.g. after fulfilling a WhatsApp claim).</p>
+    <input type="text" id="referral-phone" placeholder="+2547XXXXXXXX">
+    <button style="margin-top:0.6rem;" onclick="lookupReferralCredits()">Check Credits</button>
+    <div id="referral-lookup-status" class="status-msg"></div>
+
+    <div id="referral-redeem-box" style="display:none; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-color);">
+      <div style="font-size:0.9rem; margin-bottom:0.6rem;">
+        Balance: <strong id="referral-balance">0</strong> credit(s)
+      </div>
+      <label style="font-size:0.85rem; color:var(--text-secondary); display:block; margin-bottom:0.5rem;">Credits to redeem</label>
+      <input type="number" id="referral-redeem-amount" min="1" step="1" value="1">
+      <button style="margin-top:0.75rem;" onclick="redeemReferralCreditsAction()" id="redeem-btn">Redeem</button>
+      <div id="referral-redeem-status" class="status-msg"></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -124,6 +142,14 @@
     return document.getElementById('admin-secret').value.trim();
   }
 
+  function normalizePhone(raw) {
+    if (!raw) return '';
+    let p = String(raw).replace(/[^0-9+]/g, '');
+    if (p.startsWith('0') && p.length === 10) p = '+254' + p.slice(1);
+    else if (p.startsWith('254') && !p.startsWith('+') && p.length === 12) p = '+' + p;
+    return /^\+254[17]\d{8}$/.test(p) ? p : '';
+  }
+
   async function loadPendingOrders() {
     const secret = getSecret();
     const authStatus = document.getElementById('auth-status');
@@ -137,6 +163,7 @@
       if (json.error) throw new Error(json.error);
 
       document.getElementById('orders-card').style.display = 'block';
+      document.getElementById('referral-card').style.display = 'block';
       renderOrders(json.orders || []);
     } catch (err) {
       authStatus.textContent = err.message || 'Failed to load orders.';
@@ -238,6 +265,93 @@
       btn.disabled = false;
       btn.textContent = 'Confirm Payment';
       alert(err.message || 'Failed to confirm payment.');
+    }
+  }
+
+  async function lookupReferralCredits() {
+    const lookupStatus = document.getElementById('referral-lookup-status');
+    const redeemBox = document.getElementById('referral-redeem-box');
+    const redeemStatus = document.getElementById('referral-redeem-status');
+    lookupStatus.textContent = '';
+    lookupStatus.className = 'status-msg';
+    redeemStatus.textContent = '';
+    redeemStatus.className = 'status-msg';
+    redeemBox.style.display = 'none';
+
+    const phone = normalizePhone(document.getElementById('referral-phone').value.trim());
+    if (!phone) {
+      lookupStatus.textContent = 'Enter a valid Kenya phone number (e.g. 0712345678).';
+      lookupStatus.className = 'status-msg error';
+      return;
+    }
+
+    try {
+      const json = await callOrderHandler({ referral_status: true, phone_number: phone });
+      if (json.error) throw new Error(json.error);
+
+      const credits = json.referral?.credits ?? 0;
+      document.getElementById('referral-balance').textContent = credits;
+      document.getElementById('referral-redeem-amount').setAttribute('max', String(Math.max(credits, 1)));
+      document.getElementById('referral-redeem-amount').value = credits > 0 ? credits : 1;
+
+      if (credits > 0) {
+        redeemBox.style.display = 'block';
+      } else {
+        lookupStatus.textContent = 'This client has no referral credits to redeem.';
+        lookupStatus.className = 'status-msg';
+      }
+    } catch (err) {
+      lookupStatus.textContent = err.message || 'Failed to look up referral credits.';
+      lookupStatus.className = 'status-msg error';
+    }
+  }
+
+  async function redeemReferralCreditsAction() {
+    const secret = getSecret();
+    const redeemStatus = document.getElementById('referral-redeem-status');
+    const btn = document.getElementById('redeem-btn');
+    redeemStatus.textContent = '';
+    redeemStatus.className = 'status-msg';
+
+    const phone = normalizePhone(document.getElementById('referral-phone').value.trim());
+    const credits = Number(document.getElementById('referral-redeem-amount').value);
+
+    if (!phone) {
+      redeemStatus.textContent = 'Enter a valid Kenya phone number first.';
+      redeemStatus.className = 'status-msg error';
+      return;
+    }
+    if (!Number.isInteger(credits) || credits <= 0) {
+      redeemStatus.textContent = 'Enter a whole number of credits greater than 0.';
+      redeemStatus.className = 'status-msg error';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Redeeming...';
+
+    try {
+      const json = await callOrderHandler({
+        redeem_referral_credits: true,
+        admin_secret: secret,
+        phone_number: phone,
+        credits,
+      });
+      if (json.error) throw new Error(json.error);
+
+      document.getElementById('referral-balance').textContent = json.remaining;
+      redeemStatus.textContent = `Redeemed ${json.redeemed} credit(s) — ${json.remaining} remaining.`;
+      redeemStatus.className = 'status-msg ok';
+
+      if (json.remaining <= 0) {
+        document.getElementById('referral-redeem-box').style.display = 'none';
+      }
+    } catch (err) {
+      redeemStatus.textContent = err.message || 'Failed to redeem credits.';
+      redeemStatus.className = 'status-msg error';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Redeem';
     }
   }
 </script>
