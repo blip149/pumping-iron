@@ -23,7 +23,16 @@ const LEAD_TIER = "lead";
 
 const MEMBER_DISCOUNT_RATE = 0.10;
 const MILESTONE_DISCOUNT_RATE = 0.30;
-const REFERRAL_DISCOUNT_RATE = 0.10; // referred client's first order — tune freely
+const REFERRAL_DISCOUNT_RATE = 0.20; // referred client's first order — tune freely
+
+// Admin/marketing referral codes — pre-issued for tracking a promotional
+// channel (a gym visit, an influencer post, a printed sticker QR) rather
+// than a real client's phone number. These deliberately bypass the
+// "referrer must be an existing client with a paid/confirmed order" check
+// below, since there's no real client behind the code to check — add new
+// codes here as new channels launch. Matched case-insensitively so "pm003"
+// and "PM003" are the same code.
+const ADMIN_REFERRAL_CODES = new Set(["PM001", "PM002", "PM003"]);
 
 const TUB_COST_KES = 3000;
 const TUB_GRAMS = 410;
@@ -233,6 +242,14 @@ async function validateReferral(
 ): Promise<{ ok: true; referredByPhone: string | null } | { ok: false; error: string }> {
   if (typeof referredByRaw !== "string" || !referredByRaw.trim()) {
     return { ok: true, referredByPhone: null };
+  }
+
+  // Admin/marketing codes short-circuit everything below — they're not a
+  // claim about being an existing client, so there's no order history or
+  // self-referral check that applies to them.
+  const upperCode = referredByRaw.trim().toUpperCase();
+  if (ADMIN_REFERRAL_CODES.has(upperCode)) {
+    return { ok: true, referredByPhone: upperCode };
   }
 
   const candidateReferrer = normalizePhone(referredByRaw);
@@ -561,16 +578,7 @@ const FLAT_SACHET_GRAMS = 3.0;
 const FLAT_SACHET_PRICE = getSachetPrice(FLAT_SACHET_GRAMS); // ~46 KES
 const MAX_DOSES_PER_DAY = 3; // no rush to saturate — don't overwhelm the body with high-frequency dosing
 const MAINTENANCE_BATCH_DAYS = 14;
-const WEEKLY_BATCH_DAYS = 7;
-// A batch is never delivered as fewer than this many days — below that,
-// a dedicated delivery trip isn't worth it regardless of dose frequency.
-const MIN_BATCH_DAYS = 6;
-// Batching only makes sense once a plan is long enough that, after the
-// first 7-day batch, there's still a real (>= MIN_BATCH_DAYS) tail left —
-// otherwise splitting it just creates a delivery trip that isn't worth
-// making on its own. Deriving this from the two day-counts directly (13)
-// keeps it from drifting out of sync if either constant changes.
-const BATCHING_ELIGIBLE_MIN_DAYS = WEEKLY_BATCH_DAYS + MIN_BATCH_DAYS;
+const WEEKLY_BATCH_DAYS = 7; // the floor for an auto-sized (no duration picked) order
 
 // price(n) = 46 - 9*(n-1)/n — approaches but can never reach/exceed a
 // 9 KES/sachet discount, at any dose frequency, by construction.
@@ -620,7 +628,6 @@ function calculateOrderFinancials(args: {
   remainingGrams: number;
   requestedDosesPerDay?: number;
   requestedDurationDays?: number;
-  batchWeekly?: boolean;
   isVip: boolean;
   isMilestone: boolean;
   isReferredFirstOrder?: boolean;
@@ -628,7 +635,6 @@ function calculateOrderFinancials(args: {
   let dosesPerDay: number;
   let durationDays: number;
   let naturalDurationDays: number | null = null;
-  let isBatched = false;
   // The split that actually drives pricing/dosing below: saturationDays get
   // dosed at `dosesPerDay`, maintenanceDays always get dosed at flat 1/day.
   // A client-selected duration never changes naturalDurationDays (the
@@ -656,37 +662,24 @@ function calculateOrderFinancials(args: {
 
     if (args.requestedDurationDays != null) {
       // Client picked the total length themselves — e.g. stocking up to
-      // 30 days to make the most of a milestone discount. The natural
-      // days-to-saturate is still computed above, untouched, and reported
-      // back alongside this. Anything beyond it is priced and dosed as
-      // maintenance rather than continuing the saturation frequency —
-      // continuing the higher dose past the point of saturation would
-      // just be waste, the same reasoning that already governs the
-      // maintenance branch above.
+      // 30 days to make the most of a milestone discount, or choosing a
+      // shorter first purchase instead of committing to the full natural
+      // need up front. The natural days-to-saturate is still computed
+      // above, untouched, and reported back alongside this. Anything
+      // beyond it is priced and dosed as maintenance rather than
+      // continuing the saturation frequency — continuing the higher dose
+      // past the point of saturation would just be waste, the same
+      // reasoning that already governs the maintenance branch above.
       durationDays = args.requestedDurationDays;
-      saturationDays = Math.min(durationDays, chosen.daysToSaturate);
-      maintenanceDays = Math.max(0, durationDays - chosen.daysToSaturate);
-      isBatched = false; // a deliberate one-shot purchase — no weekly splitting
-    } else if (args.batchWeekly && chosen.daysToSaturate >= BATCHING_ELIGIBLE_MIN_DAYS) {
-      const cappedDuration = Math.min(WEEKLY_BATCH_DAYS, chosen.daysToSaturate);
-      // Never create an awkwardly short first batch — if capping at 7 days
-      // would leave a tail under MIN_BATCH_DAYS, deliver the full plan
-      // in one go instead. (In practice this never fires once
-      // BATCHING_ELIGIBLE_MIN_DAYS already guarantees a >= MIN_BATCH_DAYS
-      // tail — kept as a guard in case either constant changes later.)
-      durationDays = cappedDuration < MIN_BATCH_DAYS ? chosen.daysToSaturate : cappedDuration;
-      isBatched = durationDays < chosen.daysToSaturate;
-      saturationDays = durationDays; // capping never overshoots daysToSaturate
     } else {
-      // Non-batched orders always cover at least a full week — never sell
-      // just the bare number of days needed to top off. Same reasoning as
-      // the client-selected-duration branch above: the padding beyond the
-      // real saturation need is maintenance dosing, not more of the
-      // saturation frequency.
+      // No duration picked — auto-size to the natural need, floored at a
+      // full week so we never sell just the bare number of days needed to
+      // top off. If a client wants a smaller first purchase than that,
+      // the duration dropdown is how they ask for it directly.
       durationDays = Math.max(WEEKLY_BATCH_DAYS, chosen.daysToSaturate);
-      saturationDays = Math.min(durationDays, chosen.daysToSaturate);
-      maintenanceDays = Math.max(0, durationDays - chosen.daysToSaturate);
     }
+    saturationDays = Math.min(durationDays, chosen.daysToSaturate);
+    maintenanceDays = Math.max(0, durationDays - chosen.daysToSaturate);
   }
 
   const totalSachets = (dosesPerDay * saturationDays) + (1 * maintenanceDays);
@@ -709,7 +702,7 @@ function calculateOrderFinancials(args: {
     // client's very first order ever (enforced by the caller). Written as
     // its own branch anyway so that invariant isn't load-bearing here.
     discountRate = REFERRAL_DISCOUNT_RATE;
-    discountApplied = "REFERRAL_10";
+    discountApplied = "REFERRAL_20";
   }
 
   const discountAmount = round2(grossAmount * discountRate);
@@ -727,7 +720,6 @@ function calculateOrderFinancials(args: {
     discountApplied,
     discountRate,
     naturalDurationDays,
-    isBatched,
   };
 }
 
@@ -952,33 +944,21 @@ serve(async (req: Request) => {
     }
 
     if (body?.validate_referrer === true) {
-      const phone = normalizePhone(body?.phone_number);
       const clientPhone = normalizePhone(body?.client_phone);
+      // Reuses the exact same rules the quote and real-order paths enforce
+      // — including admin/marketing codes — so this preview can never say
+      // "valid" for something the real order would then reject, or vice
+      // versa.
+      const referralCheck = await validateReferral(clientPhone, body?.phone_number);
 
-      if (!phone || !PHONE_REGEX.test(phone)) {
-        return jsonResponse({
-          status: "referrer_validation",
-          valid: false,
-          error: "Please enter a valid phone number.",
-        }, 200);
-      }
-
-      if (clientPhone && phone === clientPhone) {
-        return jsonResponse({
-          status: "referrer_validation",
-          valid: false,
-          error: "You cannot refer yourself.",
-        }, 200);
-      }
-
-      const isEligible = await isPaidOrConfirmedClient(phone);
       return jsonResponse({
         status: "referrer_validation",
-        valid: isEligible,
-        phone,
-        message: isEligible
-          ? "Existing client with paid or confirmed order verified"
-          : "Candidate referrer must have at least 1 paid or confirmed order.",
+        valid: referralCheck.ok,
+        phone: referralCheck.ok ? referralCheck.referredByPhone : undefined,
+        message: referralCheck.ok
+          ? "Verified"
+          : referralCheck.error,
+        error: referralCheck.ok ? undefined : referralCheck.error,
       }, 200);
     }
 
@@ -1022,7 +1002,6 @@ serve(async (req: Request) => {
     if (requestedDurationDays != null && (!Number.isInteger(requestedDurationDays) || requestedDurationDays < 1)) {
       return jsonResponse({ error: "duration_days must be a positive integer." }, 400);
     }
-    const batchWeekly = body.batch_weekly === true;
 
     // Referral only ever applies to a client's first PAID order — same rule
     // the real order enforces below, and reusing eligibility.streakCount
@@ -1086,7 +1065,6 @@ serve(async (req: Request) => {
           remainingGrams,
           requestedDosesPerDay,
           requestedDurationDays,
-          batchWeekly,
           isVip: eligibility.isVip,
           isMilestone: eligibility.isMilestone,
           isReferredFirstOrder: referredByPhoneForQuote !== null,
@@ -1100,8 +1078,6 @@ serve(async (req: Request) => {
           discount_applied: financials.discountApplied,
           natural_duration_days: financials.naturalDurationDays,
           maintenance_days: financials.maintenanceDays,
-          is_batched: financials.isBatched,
-          batching_eligible: financials.naturalDurationDays != null && financials.naturalDurationDays >= BATCHING_ELIGIBLE_MIN_DAYS,
         };
       }
 
@@ -1115,7 +1091,6 @@ serve(async (req: Request) => {
           daily_cost: t.dailyCost,
           total_cost: t.totalCost,
           total_sachets: t.totalSachets,
-          batching_eligible: t.daysToSaturate >= BATCHING_ELIGIBLE_MIN_DAYS,
         })),
         selected_tier: selectedTier,
       }, 200);
@@ -1163,22 +1138,11 @@ serve(async (req: Request) => {
 
     let referredByPhone: string | null = null;
     if (isFirstOrderEver && typeof body.referred_by_phone === "string" && body.referred_by_phone.trim()) {
-      const candidateReferrer = normalizePhone(body.referred_by_phone);
-      if (!candidateReferrer || !PHONE_REGEX.test(candidateReferrer)) {
-        return jsonResponse({ error: "Invalid referred_by_phone format." }, 400);
+      const referralCheck = await validateReferral(phone, body.referred_by_phone);
+      if (!referralCheck.ok) {
+        return jsonResponse({ error: referralCheck.error }, 400);
       }
-      if (candidateReferrer === phone) {
-        return jsonResponse({ error: "You cannot refer yourself." }, 400);
-      }
-
-      const isEligible = await isPaidOrConfirmedClient(candidateReferrer);
-      if (!isEligible) {
-        return jsonResponse({
-          error: "The referred-by number must belong to an existing client with at least 1 paid or confirmed order.",
-        }, 400);
-      }
-
-      referredByPhone = candidateReferrer;
+      referredByPhone = referralCheck.referredByPhone;
     }
 
     let financials;
@@ -1188,7 +1152,6 @@ serve(async (req: Request) => {
         remainingGrams,
         requestedDosesPerDay,
         requestedDurationDays,
-        batchWeekly,
         isVip: eligibility.isVip,
         isMilestone: eligibility.isMilestone,
         isReferredFirstOrder: referredByPhone !== null,
@@ -1197,10 +1160,7 @@ serve(async (req: Request) => {
       return jsonResponse({ error: err instanceof Error ? err.message : "Invalid tier selection." }, 400);
     }
 
-    // Batching only works if auto-renew is on — that's what carries the
-    // remaining weekly batches forward. If the client picked batching but
-    // left auto-renew off, batching wins (it's the more explicit choice).
-    const autoRenew = financials.isBatched ? true : body.auto_renew === true;
+    const autoRenew = body.auto_renew === true;
 
     const userId = await getOrCreateUser({
       phone,
@@ -1211,8 +1171,6 @@ serve(async (req: Request) => {
 
     const planName = saturation.isSaturated
       ? "Maintenance (1x/day)"
-      : financials.isBatched
-      ? `Saturation Plan (${financials.dosesPerDay}x/day, weekly batch)`
       : `Saturation Plan (${financials.dosesPerDay}x/day)`;
 
     const orderPayload = {
