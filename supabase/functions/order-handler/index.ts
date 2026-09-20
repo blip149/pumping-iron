@@ -32,7 +32,7 @@ const REFERRAL_DISCOUNT_RATE = 0.20; // referred client's first order — tune f
 // below, since there's no real client behind the code to check — add new
 // codes here as new channels launch. Matched case-insensitively so "pm003"
 // and "PM003" are the same code.
-const ADMIN_REFERRAL_CODES = new Set(["PM001", "PM002", "PM003"]);
+const ADMIN_REFERRAL_CODES = new Set([ "PI003"]);
 
 const TUB_COST_KES = 3000;
 const TUB_GRAMS = 410;
