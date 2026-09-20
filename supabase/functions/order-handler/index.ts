@@ -23,20 +23,7 @@ const LEAD_TIER = "lead";
 
 const MEMBER_DISCOUNT_RATE = 0.10;
 const MILESTONE_DISCOUNT_RATE = 0.30;
-const REFERRAL_DISCOUNT_RATE = 0.20; // referred client's first order — tune freely
-
-// Admin/promo referral codes — case-insensitive, no phone number attached.
-// Using one of these grants the referral discount with none of the
-// phone-based checks: no format check, no self-referral check, and no
-// "referrer must have a paid/confirmed order" lookup. Nothing is ever
-// stored as referred_by_phone for these, so no one accrues referral credit
-// from them either — they're purely a discount lever. Add more here as
-// needed.
-const SPECIAL_REFERRAL_CODES = new Set(["PM003"]);
-
-function isSpecialReferralCode(raw: string): boolean {
-  return SPECIAL_REFERRAL_CODES.has(raw.trim().toUpperCase());
-}
+const REFERRAL_DISCOUNT_RATE = 0.10; // referred client's first order — tune freely
 
 const TUB_COST_KES = 3000;
 const TUB_GRAMS = 410;
@@ -240,22 +227,12 @@ async function isPaidOrConfirmedClient(phone: string): Promise<boolean> {
 //   - referrer must be a real client  -> can't invent a fake referrer
 //   - caller only calls this when isFirstOrderEver -> can't reuse a used-up
 //     phone number's "new client" discount on a later order
-//
-// An admin code (SPECIAL_REFERRAL_CODES) short-circuits all of the above:
-// no phone, no lookup, just the discount — see isSpecialReferralCode.
 async function validateReferral(
   phone: string,
   referredByRaw: unknown,
-): Promise<
-  | { ok: true; referredByPhone: string | null; discountEligible: boolean }
-  | { ok: false; error: string }
-> {
+): Promise<{ ok: true; referredByPhone: string | null } | { ok: false; error: string }> {
   if (typeof referredByRaw !== "string" || !referredByRaw.trim()) {
-    return { ok: true, referredByPhone: null, discountEligible: false };
-  }
-
-  if (isSpecialReferralCode(referredByRaw)) {
-    return { ok: true, referredByPhone: null, discountEligible: true };
+    return { ok: true, referredByPhone: null };
   }
 
   const candidateReferrer = normalizePhone(referredByRaw);
@@ -274,7 +251,7 @@ async function validateReferral(
     };
   }
 
-  return { ok: true, referredByPhone: candidateReferrer, discountEligible: true };
+  return { ok: true, referredByPhone: candidateReferrer };
 }
 
 // ----------------------------------------------------------
@@ -470,88 +447,10 @@ async function getCurrentSaturationStatus(phone: string, weightOverrideKg?: numb
 // getCurrentSaturationStatus is next called for this client — it looks up
 // this same order (by confirmed_at) and simulates forward from here.
 // ----------------------------------------------------------
-// Awards the referrer one credit the first time EITHER confirmation event
-// (delivery or payment) lands on an order that carries referred_by_phone —
-// i.e. the referred client's own first order, whichever confirmation
-// happens first. The update only succeeds once per order (it's guarded by
-// referral_credit_awarded = false), so if both events eventually fire on
-// the same order — payment now, delivery later, or vice versa — only the
-// first one actually credits the referrer.
-async function awardReferralCreditIfNeeded(orderId: string, referredByPhone: string | null): Promise<boolean> {
-  if (!referredByPhone) return false;
-
-  const { data: claimed, error: claimError } = await db
-    .from("orders")
-    .update({ referral_credit_awarded: true })
-    .eq("id", orderId)
-    .eq("referral_credit_awarded", false)
-    .select("id")
-    .maybeSingle();
-
-  if (claimError || !claimed) return false;
-
-  const { data: referrerRow, error: referrerError } = await db
-    .from("users")
-    .select("id, referral_credits")
-    .eq("phone_number", referredByPhone)
-    .maybeSingle();
-
-  if (referrerError || !referrerRow) return false;
-
-  const { error: creditError } = await db
-    .from("users")
-    .update({ referral_credits: (referrerRow.referral_credits ?? 0) + 1 })
-    .eq("id", referrerRow.id);
-
-  return !creditError;
-}
-
-// Redeeming is the counterpart to awarding: it's what actually spends the
-// credits once you've fulfilled a claim (handed over the free sachet). The
-// update is guarded by "referral_credits still equals what we just read" so
-// two redemption taps racing each other can't both succeed against a stale
-// balance — the second one fails cleanly instead of double-spending.
-async function redeemReferralCredits(
-  phone: string,
-  creditsToRedeem: number,
-): Promise<
-  | { ok: true; redeemed: number; remaining: number }
-  | { ok: false; error: string }
-> {
-  const { data: userRow, error: userError } = await db
-    .from("users")
-    .select("id, referral_credits")
-    .eq("phone_number", phone)
-    .maybeSingle();
-
-  if (userError) return { ok: false, error: `User lookup failed: ${userError.message}` };
-  if (!userRow) return { ok: false, error: "No user found for that phone number." };
-
-  const currentCredits = userRow.referral_credits ?? 0;
-  if (creditsToRedeem > currentCredits) {
-    return { ok: false, error: `Only ${currentCredits} credit(s) available — cannot redeem ${creditsToRedeem}.` };
-  }
-
-  const remaining = currentCredits - creditsToRedeem;
-
-  const { data: updated, error: updateError } = await db
-    .from("users")
-    .update({ referral_credits: remaining })
-    .eq("id", userRow.id)
-    .eq("referral_credits", currentCredits)
-    .select("id")
-    .maybeSingle();
-
-  if (updateError) return { ok: false, error: `Update failed: ${updateError.message}` };
-  if (!updated) return { ok: false, error: "Credit balance changed just now — please retry." };
-
-  return { ok: true, redeemed: creditsToRedeem, remaining };
-}
-
 async function confirmDelivery(clientOrderId: string, pickupDateOverride?: string) {
   const { data: order, error: orderError } = await db
     .from("orders")
-    .select("id, phone_number, created_at, confirmed_at, grams_delivered, referred_by_phone")
+    .select("id, phone_number, created_at, confirmed_at, grams_delivered")
     .eq("client_order_id", clientOrderId)
     .maybeSingle();
 
@@ -608,13 +507,39 @@ async function confirmDelivery(clientOrderId: string, pickupDateOverride?: strin
     .eq("id", userRow.id);
   if (updateUserError) throw new Error(`User update failed: ${updateUserError.message}`);
 
-  // Referral credit: awarded the moment EITHER confirmation event —
-  // delivery (here) or payment (confirmPayment) — lands on the referred
-  // client's own first order, whichever happens first. Only that first
-  // order ever carries referred_by_phone, and awardReferralCreditIfNeeded's
-  // claim update guards against the other event later double-crediting the
-  // same order.
-  const referralCredited = await awardReferralCreditIfNeeded(order.id, order.referred_by_phone ?? null);
+  // Referral credit: only fires when this is NOT the client's first-ever
+  // order (their FIRST order is the only one that ever carries
+  // referred_by_phone), and only once per order (guarded by the
+  // confirmed_at check above — this function never runs twice on one order).
+  let referralCredited = false;
+  const { data: firstOrder, error: firstOrderError } = await db
+    .from("orders")
+    .select("id, referred_by_phone")
+    .eq("phone_number", order.phone_number)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!firstOrderError && firstOrder && firstOrder.id !== order.id && firstOrder.referred_by_phone) {
+    const referrerPhone = firstOrder.referred_by_phone;
+    const { data: referrerRow, error: referrerError } = await db
+      .from("users")
+      .select("id, referral_credits")
+      .eq("phone_number", referrerPhone)
+      .maybeSingle();
+
+    if (!referrerError && referrerRow) {
+      const { error: creditError } = await db
+        .from("users")
+        .update({ referral_credits: (referrerRow.referral_credits ?? 0) + 1 })
+        .eq("id", referrerRow.id);
+
+      if (!creditError) {
+        await db.from("orders").update({ referral_credit_awarded: true }).eq("id", order.id);
+        referralCredited = true;
+      }
+    }
+  }
 
   return {
     confirmed: true,
@@ -694,6 +619,7 @@ function calculateOrderFinancials(args: {
   isSaturated: boolean;
   remainingGrams: number;
   requestedDosesPerDay?: number;
+  requestedDurationDays?: number;
   batchWeekly?: boolean;
   isVip: boolean;
   isMilestone: boolean;
@@ -701,16 +627,24 @@ function calculateOrderFinancials(args: {
 }) {
   let dosesPerDay: number;
   let durationDays: number;
-  let grossAmount: number;
   let naturalDurationDays: number | null = null;
   let isBatched = false;
+  // The split that actually drives pricing/dosing below: saturationDays get
+  // dosed at `dosesPerDay`, maintenanceDays always get dosed at flat 1/day.
+  // A client-selected duration never changes naturalDurationDays (the
+  // science) — it only decides how much of THIS order's total falls on
+  // each side of that number.
+  let saturationDays = 0;
+  let maintenanceDays = 0;
 
   if (args.isSaturated) {
-    // Maintenance: fixed, no speed tiers offered — more than 1/day does
-    // nothing extra once saturated, so we never sell it.
+    // Maintenance: fixed dose, no speed tiers — more than 1/day does
+    // nothing extra once saturated, so we never sell it. Already a pure
+    // maintenance purchase, so a client-selected duration is honored
+    // outright — nothing to blend.
     dosesPerDay = 1;
-    durationDays = MAINTENANCE_BATCH_DAYS;
-    grossAmount = round2(dailyCostForDoses(1) * durationDays);
+    durationDays = args.requestedDurationDays ?? MAINTENANCE_BATCH_DAYS;
+    maintenanceDays = durationDays;
   } else {
     const menu = generateSaturationTierMenu(args.remainingGrams);
     const chosen = menu.find((t) => t.dosesPerDay === args.requestedDosesPerDay) ?? menu[0];
@@ -720,10 +654,20 @@ function calculateOrderFinancials(args: {
     dosesPerDay = chosen.dosesPerDay;
     naturalDurationDays = chosen.daysToSaturate;
 
-    // Weekly batching only makes sense once the plan already needs more
-    // than one delivery trip — a plan that fits in a single week doesn't
-    // gain anything from being "batched."
-    if (args.batchWeekly && chosen.daysToSaturate >= BATCHING_ELIGIBLE_MIN_DAYS) {
+    if (args.requestedDurationDays != null) {
+      // Client picked the total length themselves — e.g. stocking up to
+      // 30 days to make the most of a milestone discount. The natural
+      // days-to-saturate is still computed above, untouched, and reported
+      // back alongside this. Anything beyond it is priced and dosed as
+      // maintenance rather than continuing the saturation frequency —
+      // continuing the higher dose past the point of saturation would
+      // just be waste, the same reasoning that already governs the
+      // maintenance branch above.
+      durationDays = args.requestedDurationDays;
+      saturationDays = Math.min(durationDays, chosen.daysToSaturate);
+      maintenanceDays = Math.max(0, durationDays - chosen.daysToSaturate);
+      isBatched = false; // a deliberate one-shot purchase — no weekly splitting
+    } else if (args.batchWeekly && chosen.daysToSaturate >= BATCHING_ELIGIBLE_MIN_DAYS) {
       const cappedDuration = Math.min(WEEKLY_BATCH_DAYS, chosen.daysToSaturate);
       // Never create an awkwardly short first batch — if capping at 7 days
       // would leave a tail under MIN_BATCH_DAYS, deliver the full plan
@@ -732,18 +676,24 @@ function calculateOrderFinancials(args: {
       // tail — kept as a guard in case either constant changes later.)
       durationDays = cappedDuration < MIN_BATCH_DAYS ? chosen.daysToSaturate : cappedDuration;
       isBatched = durationDays < chosen.daysToSaturate;
+      saturationDays = durationDays; // capping never overshoots daysToSaturate
     } else {
       // Non-batched orders always cover at least a full week — never sell
-      // just the bare number of days needed to top off. The 5-sachet floor
-      // above is a separate rule that only governs weekly-batch splitting.
+      // just the bare number of days needed to top off. Same reasoning as
+      // the client-selected-duration branch above: the padding beyond the
+      // real saturation need is maintenance dosing, not more of the
+      // saturation frequency.
       durationDays = Math.max(WEEKLY_BATCH_DAYS, chosen.daysToSaturate);
+      saturationDays = Math.min(durationDays, chosen.daysToSaturate);
+      maintenanceDays = Math.max(0, durationDays - chosen.daysToSaturate);
     }
-
-    grossAmount = round2(dailyCostForDoses(dosesPerDay) * durationDays);
   }
 
-  const totalSachets = dosesPerDay * durationDays;
+  const totalSachets = (dosesPerDay * saturationDays) + (1 * maintenanceDays);
   const gramsDelivered = round2(totalSachets * FLAT_SACHET_GRAMS);
+  const grossAmount = round2(
+    (dailyCostForDoses(dosesPerDay) * saturationDays) + (dailyCostForDoses(1) * maintenanceDays)
+  );
 
   let discountRate = 0;
   let discountApplied = "NONE";
@@ -759,7 +709,7 @@ function calculateOrderFinancials(args: {
     // client's very first order ever (enforced by the caller). Written as
     // its own branch anyway so that invariant isn't load-bearing here.
     discountRate = REFERRAL_DISCOUNT_RATE;
-    discountApplied = "REFERRAL_20";
+    discountApplied = "REFERRAL_10";
   }
 
   const discountAmount = round2(grossAmount * discountRate);
@@ -768,6 +718,7 @@ function calculateOrderFinancials(args: {
   return {
     dosesPerDay,
     durationDays,
+    maintenanceDays,
     totalSachets,
     gramsDelivered,
     grossAmount,
@@ -791,7 +742,7 @@ function calculateOrderFinancials(args: {
 async function confirmPayment(clientOrderId: string) {
   const { data: order, error: orderError } = await db
     .from("orders")
-    .select("id, status, referred_by_phone")
+    .select("id, status")
     .eq("client_order_id", clientOrderId)
     .maybeSingle();
 
@@ -808,9 +759,7 @@ async function confirmPayment(clientOrderId: string) {
 
   if (updateError) throw new Error(`Order update failed: ${updateError.message}`);
 
-  const referralCredited = await awardReferralCreditIfNeeded(order.id, order.referred_by_phone ?? null);
-
-  return { confirmed: true, referralCredited };
+  return { confirmed: true };
 }
 
 function membershipPayload(eligibility: { streakCount: number; isVip: boolean; isMilestone: boolean }) {
@@ -1002,54 +951,15 @@ serve(async (req: Request) => {
       }, 200);
     }
 
-    if (body?.redeem_referral_credits === true) {
-      if (!ADMIN_SECRET || body?.admin_secret !== ADMIN_SECRET) {
-        return jsonResponse({ error: "Unauthorized." }, 401);
-      }
-
-      const phone = normalizePhone(body?.phone_number);
-      if (!PHONE_REGEX.test(phone)) {
-        return jsonResponse({ error: "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX." }, 400);
-      }
-
-      const creditsToRedeem = Number(body?.credits);
-      if (!Number.isInteger(creditsToRedeem) || creditsToRedeem <= 0) {
-        return jsonResponse({ error: "credits must be a positive whole number." }, 400);
-      }
-
-      const result = await redeemReferralCredits(phone, creditsToRedeem);
-      if (!result.ok) {
-        return jsonResponse({ error: result.error }, 409);
-      }
-
-      return jsonResponse({
-        status: "referral_redeemed",
-        phone,
-        redeemed: result.redeemed,
-        remaining: result.remaining,
-      }, 200);
-    }
-
     if (body?.validate_referrer === true) {
-      const rawInput = typeof body?.phone_number === "string" ? body.phone_number : "";
+      const phone = normalizePhone(body?.phone_number);
       const clientPhone = normalizePhone(body?.client_phone);
-
-      if (isSpecialReferralCode(rawInput)) {
-        return jsonResponse({
-          status: "referrer_validation",
-          valid: true,
-          phone: rawInput.trim().toUpperCase(),
-          message: "Promo code applied — no referrer lookup needed.",
-        }, 200);
-      }
-
-      const phone = normalizePhone(rawInput);
 
       if (!phone || !PHONE_REGEX.test(phone)) {
         return jsonResponse({
           status: "referrer_validation",
           valid: false,
-          error: "Please enter a valid phone number or referral code.",
+          error: "Please enter a valid phone number.",
         }, 200);
       }
 
@@ -1108,6 +1018,10 @@ serve(async (req: Request) => {
     const saturation = await getCurrentSaturationStatus(phone, weight);
     const remainingGrams = Math.max(0, saturation.thresholdGrams - saturation.currentStoreGrams);
     const requestedDosesPerDay = body.doses_per_day != null ? Number(body.doses_per_day) : undefined;
+    const requestedDurationDays = body.duration_days != null ? Number(body.duration_days) : undefined;
+    if (requestedDurationDays != null && (!Number.isInteger(requestedDurationDays) || requestedDurationDays < 1)) {
+      return jsonResponse({ error: "duration_days must be a positive integer." }, 400);
+    }
     const batchWeekly = body.batch_weekly === true;
 
     // Referral only ever applies to a client's first PAID order — same rule
@@ -1117,14 +1031,14 @@ serve(async (req: Request) => {
     // too so the quote preview shows the real, referral-adjusted price
     // instead of surprising the client with a different number at
     // submission.
-    let referralDiscountEligibleForQuote = false;
+    let referredByPhoneForQuote: string | null = null;
     if (isQuote) {
       if (eligibility.streakCount === 0) {
         const referralCheck = await validateReferral(phone, body.referred_by_phone);
         if (!referralCheck.ok) {
           return jsonResponse({ error: referralCheck.error }, 400);
         }
-        referralDiscountEligibleForQuote = referralCheck.discountEligible;
+        referredByPhoneForQuote = referralCheck.referredByPhone;
       }
     }
 
@@ -1133,9 +1047,10 @@ serve(async (req: Request) => {
         const financials = calculateOrderFinancials({
           isSaturated: true,
           remainingGrams: 0,
+          requestedDurationDays,
           isVip: eligibility.isVip,
           isMilestone: eligibility.isMilestone,
-          isReferredFirstOrder: referralDiscountEligibleForQuote,
+          isReferredFirstOrder: referredByPhoneForQuote !== null,
         });
         return jsonResponse({
           status: "quote",
@@ -1170,10 +1085,11 @@ serve(async (req: Request) => {
           isSaturated: false,
           remainingGrams,
           requestedDosesPerDay,
+          requestedDurationDays,
           batchWeekly,
           isVip: eligibility.isVip,
           isMilestone: eligibility.isMilestone,
-          isReferredFirstOrder: referralDiscountEligibleForQuote,
+          isReferredFirstOrder: referredByPhoneForQuote !== null,
         });
         selectedTier = {
           doses_per_day: financials.dosesPerDay,
@@ -1183,6 +1099,7 @@ serve(async (req: Request) => {
           net_amount: financials.netAmount,
           discount_applied: financials.discountApplied,
           natural_duration_days: financials.naturalDurationDays,
+          maintenance_days: financials.maintenanceDays,
           is_batched: financials.isBatched,
           batching_eligible: financials.naturalDurationDays != null && financials.naturalDurationDays >= BATCHING_ELIGIBLE_MIN_DAYS,
         };
@@ -1245,14 +1162,23 @@ serve(async (req: Request) => {
     const isFirstOrderEver = eligibility.streakCount === 0;
 
     let referredByPhone: string | null = null;
-    let referralDiscountEligible = false;
-    if (isFirstOrderEver) {
-      const referralCheck = await validateReferral(phone, body.referred_by_phone);
-      if (!referralCheck.ok) {
-        return jsonResponse({ error: referralCheck.error }, 400);
+    if (isFirstOrderEver && typeof body.referred_by_phone === "string" && body.referred_by_phone.trim()) {
+      const candidateReferrer = normalizePhone(body.referred_by_phone);
+      if (!candidateReferrer || !PHONE_REGEX.test(candidateReferrer)) {
+        return jsonResponse({ error: "Invalid referred_by_phone format." }, 400);
       }
-      referredByPhone = referralCheck.referredByPhone;
-      referralDiscountEligible = referralCheck.discountEligible;
+      if (candidateReferrer === phone) {
+        return jsonResponse({ error: "You cannot refer yourself." }, 400);
+      }
+
+      const isEligible = await isPaidOrConfirmedClient(candidateReferrer);
+      if (!isEligible) {
+        return jsonResponse({
+          error: "The referred-by number must belong to an existing client with at least 1 paid or confirmed order.",
+        }, 400);
+      }
+
+      referredByPhone = candidateReferrer;
     }
 
     let financials;
@@ -1261,10 +1187,11 @@ serve(async (req: Request) => {
         isSaturated: saturation.isSaturated,
         remainingGrams,
         requestedDosesPerDay,
+        requestedDurationDays,
         batchWeekly,
         isVip: eligibility.isVip,
         isMilestone: eligibility.isMilestone,
-        isReferredFirstOrder: referralDiscountEligible,
+        isReferredFirstOrder: referredByPhone !== null,
       });
     } catch (err) {
       return jsonResponse({ error: err instanceof Error ? err.message : "Invalid tier selection." }, 400);
@@ -1356,6 +1283,8 @@ serve(async (req: Request) => {
         discount_amount: financials.discountAmount,
         net_amount: financials.netAmount,
         discount_applied: financials.discountApplied,
+        natural_duration_days: financials.naturalDurationDays,
+        maintenance_days: financials.maintenanceDays,
       },
     }, 201);
   } catch (error) {

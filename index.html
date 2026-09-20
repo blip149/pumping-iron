@@ -554,6 +554,21 @@
         </div>
 
         <div class="full-width">
+          <label for="durationDays">Select Duration</label>
+          <select id="durationDays" class="form-control">
+            <option value="">Select Duration</option>
+            <option value="7">7 Days</option>
+            <option value="14">14 Days</option>
+            <option value="30">30 Days</option>
+            <option value="60">60 Days</option>
+            <option value="90">90 Days</option>
+          </select>
+          <div style="font-size:0.78rem; color:var(--text-secondary); margin-top:0.35rem;">
+            Buying more than you need to saturate just switches to cheaper 1x/day maintenance dosing for the rest \u2014 handy for stocking up during a discount.
+          </div>
+        </div>
+
+        <div class="full-width">
           <label for="referredBy">Referred By (optional)</label>
           <input type="tel" id="referredBy" class="form-control" placeholder="Friend's M-Pesa number, if they referred you" onblur="validateReferrerInput()" oninput="clearReferrerFeedback()">
           <div id="referred-by-feedback" style="font-size: 0.8rem; margin-top: 0.35rem; display: none;"></div>
@@ -574,7 +589,6 @@
         <h4 style="font-family: var(--font-heading); margin-bottom: 0.5rem; color: var(--text-primary);">Choose Your Pace</h4>
         <p id="tier-subtitle" style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1rem;"></p>
         <div id="tier-table"></div>
-        <div id="batching-choice" style="display:none; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-color);"></div>
       </div>
 
       <!-- MAINTENANCE PLAN (already-saturated clients) -->
@@ -711,9 +725,9 @@
   }
 
   function formatTierName(tierCode) {
-    if (tierCode === 'vip_10') return '10% VIP Discount';
-    if (tierCode === 'milestone_30') return '30% Milestone Discount';
-    if (tierCode === 'REFERRAL_20') return '20% Newbie discount';
+    if (tierCode === 'VIP_10') return '10% VIP Discount';
+    if (tierCode === 'MILESTONE_30') return '30% Milestone Discount';
+    if (tierCode === 'REFERRAL_10') return '10% Referral Discount';
     return 'Standard Rate';
   }
 
@@ -723,6 +737,16 @@
     if (p.startsWith('0') && p.length === 10) p = '+254' + p.slice(1);
     else if (p.startsWith('254') && !p.startsWith('+') && p.length === 12) p = '+' + p;
     return /^\+254[17]\d{8}$/.test(p) ? p : '';
+  }
+
+  // Empty option = "let the system decide" (unchanged default behavior).
+  // Otherwise this is a client choice that COMPLEMENTS the saturation math,
+  // never replaces it — the backend still computes the true days-to-
+  // saturate independently and reports it back alongside whatever this
+  // buys in total.
+  function getSelectedDuration() {
+    const val = document.getElementById('durationDays')?.value;
+    return val ? parseInt(val, 10) : undefined;
   }
 
   async function callOrderHandler(payload) {
@@ -1087,7 +1111,7 @@
   function renderTierTable(menu) {
     const rows = menu.map(t => `
       <div class="summary-row tier-row" style="cursor:pointer; align-items:center;" onclick="selectTier(${t.doses_per_day})" id="tier-row-${t.doses_per_day}">
-        <span class="summary-label">${t.doses_per_day}x/day &mdash; ready in ~${t.days_to_saturate} days${t.batching_eligible ? ' <span style="color:var(--text-muted); font-size:0.75rem;">(weekly batches available)</span>' : ''}</span>
+        <span class="summary-label">${t.doses_per_day}x/day &mdash; ready in ~${t.days_to_saturate} days</span>
         <span class="summary-val">${formatKES(t.daily_cost)}/day</span>
       </div>
     `).join('');
@@ -1136,6 +1160,7 @@
         quote_only: true,
         phone_number: phone,
         body_weight_kg: weight,
+        duration_days: getSelectedDuration(),
         referred_by_phone: getVerifiedReferredBy(),
       });
 
@@ -1146,7 +1171,7 @@
         document.getElementById('maintenance-note').textContent = plan.note;
         document.getElementById('maintenance-summary').innerHTML = `
           <div class="summary-row"><span class="summary-label">Plan</span><span class="summary-val">1 sachet/day</span></div>
-          <div class="summary-row"><span class="summary-label">Batch</span><span class="summary-val">${plan.duration_days} days</span></div>
+          <div class="summary-row"><span class="summary-label">Duration</span><span class="summary-val">${plan.duration_days} days</span></div>
           <div class="summary-row"><span class="summary-label">Total</span><span class="summary-val gold">${formatKES(plan.net_amount)}</span></div>
         `;
         document.getElementById('maintenance-box').classList.add('active');
@@ -1180,18 +1205,18 @@
 
   async function selectTier(dosesPerDay) {
     lastSelectedDosesPerDay = dosesPerDay;
-    document.getElementById('batching-choice').style.display = 'none';
 
     try {
       const phone = normalizePhone(document.getElementById('phone').value.trim());
       const weight = parseFloat(document.getElementById('weight').value);
+      const selectedDuration = getSelectedDuration();
 
       const json = await callOrderHandler({
         quote_only: true,
         phone_number: phone,
         body_weight_kg: weight,
         doses_per_day: dosesPerDay,
-        batch_weekly: false,
+        duration_days: selectedDuration,
         referred_by_phone: getVerifiedReferredBy(),
       });
 
@@ -1201,76 +1226,25 @@
       const row = document.getElementById(`tier-row-${dosesPerDay}`);
       if (row) row.style.background = 'rgba(255,184,0,0.08)';
 
-      if (tier.batching_eligible) {
-        const batchBox = document.getElementById('batching-choice');
-        batchBox.innerHTML = `
-          <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.75rem;">
-            This runs ${tier.natural_duration_days} days total. Get it all at once, or in weekly batches (delivered and paid as you go)?
-          </div>
-          <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
-            <button class="btn-action" onclick="chooseBatching(false)" id="batch-choice-all" style="flex:1; min-width:140px;">All At Once</button>
-            <button class="btn-action" onclick="chooseBatching(true)" id="batch-choice-weekly" style="flex:1; min-width:140px; background:var(--accent-gold); color:#111;">Weekly Batches</button>
-          </div>
-        `;
-        batchBox.style.display = 'block';
-      } else {
-        buildOrderSummary({
-          dosesPerDay: tier.doses_per_day,
-          durationDays: tier.duration_days,
-          pricing: tier,
-          planLabel: `Saturation Plan (${tier.doses_per_day}x/day)`,
-        });
-      }
-    } catch (err) {
-      showDebug(err?.message || String(err), 'error');
-    }
-  }
-
-  async function chooseBatching(batchWeekly) {
-    try {
-      const phone = normalizePhone(document.getElementById('phone').value.trim());
-      const weight = parseFloat(document.getElementById('weight').value);
-
-      const json = await callOrderHandler({
-        quote_only: true,
-        phone_number: phone,
-        body_weight_kg: weight,
-        doses_per_day: lastSelectedDosesPerDay,
-        batch_weekly: batchWeekly,
-        referred_by_phone: getVerifiedReferredBy(),
-      });
-
-      const tier = json.selected_tier;
-      const allBtn = document.getElementById('batch-choice-all');
-      const weeklyBtn = document.getElementById('batch-choice-weekly');
-      if (allBtn && weeklyBtn) {
-        allBtn.style.background = batchWeekly ? 'transparent' : 'var(--accent-gold)';
-        allBtn.style.color = batchWeekly ? '' : '#111';
-        weeklyBtn.style.background = batchWeekly ? 'var(--accent-gold)' : 'transparent';
-        weeklyBtn.style.color = batchWeekly ? '#111' : '';
-      }
-
       buildOrderSummary({
         dosesPerDay: tier.doses_per_day,
         durationDays: tier.duration_days,
         pricing: tier,
-        planLabel: batchWeekly && tier.is_batched
-          ? `Saturation Plan (${tier.doses_per_day}x/day, weekly batch 1 of ~${Math.ceil(tier.natural_duration_days / tier.duration_days)})`
-          : `Saturation Plan (${tier.doses_per_day}x/day)`,
-        batchWeekly,
+        planLabel: `Saturation Plan (${tier.doses_per_day}x/day)`,
       });
     } catch (err) {
       showDebug(err?.message || String(err), 'error');
     }
   }
 
-  function buildOrderSummary({ dosesPerDay, durationDays, pricing, planLabel, batchWeekly = false }) {
+  function buildOrderSummary({ dosesPerDay, durationDays, pricing, planLabel }) {
     const phone = normalizePhone(document.getElementById('phone').value.trim());
     const weight = parseFloat(document.getElementById('weight').value);
     const location = document.getElementById('location').value.trim();
     const gym = document.getElementById('gym').value.trim();
     const referredBy = normalizeReferrerInput(document.getElementById('referredBy').value.trim());
-    const autoRenew = batchWeekly ? true : document.getElementById('autoRenew').checked;
+    const autoRenew = document.getElementById('autoRenew').checked;
+    const selectedDuration = getSelectedDuration();
     const m = lastMembership;
 
     if (!m) { showDebug('Check your plan first.', 'warn'); return; }
@@ -1280,7 +1254,7 @@
       phone_number: phone,
       body_weight_kg: weight,
       doses_per_day: dosesPerDay,
-      batch_weekly: batchWeekly,
+      duration_days: selectedDuration,
       location,
       gym,
       auto_renew: autoRenew,
@@ -1295,8 +1269,14 @@
          </div>`
       : '';
 
-    const batchingRowHtml = batchWeekly
-      ? `<div class="summary-row"><span class="summary-label">Delivery</span><span class="summary-val">📦 Weekly batches (auto-continues)</span></div>`
+    // Only meaningful when the client bought more than their natural
+    // saturation need in one go — shows the science-based number
+    // untouched, plus how much of this order is the cheaper maintenance
+    // top-up rather than more saturation-frequency dosing.
+    const maintenanceDays = Number(pricing.maintenance_days) || 0;
+    const saturationBreakdownHtml = (pricing.natural_duration_days != null && maintenanceDays > 0)
+      ? `<div class="summary-row"><span class="summary-label">Days To Saturation</span><span class="summary-val">${pricing.natural_duration_days} days</span></div>
+         <div class="summary-row"><span class="summary-label">Remaining Maintenance Days</span><span class="summary-val">${maintenanceDays} days at 1x/day</span></div>`
       : '';
 
     const referralRowHtml = (referredBy && referrerCache[referredBy]?.valid)
@@ -1307,7 +1287,7 @@
       <div class="summary-row"><span class="summary-label">Phone Number</span><span class="summary-val">${phone}</span></div>
       <div class="summary-row"><span class="summary-label">Plan</span><span class="summary-val">${planLabel}</span></div>
       <div class="summary-row"><span class="summary-label">Duration</span><span class="summary-val">${durationDays} days</span></div>
-      ${batchingRowHtml}
+      ${saturationBreakdownHtml}
       ${referralRowHtml}
       <div class="summary-row"><span class="summary-label">Verified Status</span><span class="summary-val">${m.isMember ? '👑 Ironclad VIP' : 'Standard Tier'}</span></div>
       <div class="summary-row"><span class="summary-label">Verified Orders</span><span class="summary-val">${m.completedOrders}</span></div>
@@ -1354,12 +1334,13 @@
         if (!res || res.error) throw new Error(res?.error || 'Order processing failed.');
 
         const confirmedTotal = res.pricing?.net_amount || netTotal;
+        const confirmedMaintenanceDays = Number(res.pricing?.maintenance_days ?? pricing.maintenance_days) || 0;
         const msg = [
           "Hello! I'd like to place an order.",
           `Phone: ${phone}`,
           `Plan: ${planLabel}`,
           `Duration: ${durationDays} days`,
-          ...(batchWeekly ? [`Delivery: Weekly batches (please deliver batch 1 first)`] : []),
+          ...(confirmedMaintenanceDays > 0 ? [`(includes ${confirmedMaintenanceDays} maintenance days after saturation)`] : []),
           `Verified Orders: ${m.completedOrders}`,
           `Order Number: #${m.nextOrderNumber}`,
           `Total: ${formatKES(confirmedTotal)}`,
