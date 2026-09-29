@@ -23,7 +23,7 @@ const LEAD_TIER = "lead";
 
 const MEMBER_DISCOUNT_RATE = 0.10;
 const MILESTONE_DISCOUNT_RATE = 0.30;
-const REFERRAL_DISCOUNT_RATE = 0.20; // referred client's first order — tune freely
+const REFERRAL_DISCOUNT_RATE = 0.15; // referred client's first order — tune freely
 
 // Admin/marketing referral codes — pre-issued for tracking a promotional
 // channel (a gym visit, an influencer post, a printed sticker QR) rather
@@ -467,7 +467,7 @@ async function getCurrentSaturationStatus(phone: string, weightOverrideKg?: numb
 async function confirmDelivery(clientOrderId: string, pickupDateOverride?: string) {
   const { data: order, error: orderError } = await db
     .from("orders")
-    .select("id, phone_number, created_at, confirmed_at, grams_delivered")
+    .select("id, phone_number, created_at, confirmed_at, grams_delivered, duration_days, body_weight_kg")
     .eq("client_order_id", clientOrderId)
     .maybeSingle();
 
@@ -524,10 +524,34 @@ async function confirmDelivery(clientOrderId: string, pickupDateOverride?: strin
     .eq("id", userRow.id);
   if (updateUserError) throw new Error(`User update failed: ${updateUserError.message}`);
 
-  // Referral credit: only fires when this is NOT the client's first-ever
-  // order (their FIRST order is the only one that ever carries
-  // referred_by_phone), and only once per order (guarded by the
-  // confirmed_at check above — this function never runs twice on one order).
+  // Referral credit: fires on ANY confirmed order for this client — including
+  // their first — as long as their first order carries referred_by_phone
+  // (only the first order ever carries it). Only once per order (guarded by
+  // the confirmed_at check above — this function never runs twice on one
+  // order). Starting from order 1 matters because a fast-saturation client
+  // can reach threshold on their very first order; if credit only started on
+  // renewals, a referrer of that client would never be credited at all,
+  // since the reward window (below) would already be closed by the time any
+  // renewal came around. The referred client's own first-order discount was
+  // scaled down from 20% to 15% to fund this.
+  //
+  // Reward window: credit stops once the referred client was ALREADY
+  // saturated — i.e. had already "become a member" — BEFORE this order
+  // started. `newBaseline` above is exactly the referred client's store
+  // level at the moment this order begins, decayed forward but not yet
+  // counting this order's own doses, so it's the right check (for a brand
+  // new client on their first order, this is always 0, so the first order
+  // always passes). If they crossed into saturation during an earlier
+  // confirmed order, this later order earns no credit. If they were still
+  // unsaturated when THIS order started, the referrer gets full credit for
+  // this order's entire duration even if this order's own dosing pushes
+  // them into saturation partway through — a single order's reward is
+  // never prorated mid-order, only the boundary between orders is checked.
+  //
+  // Credit scales with order length: 1 sachet per week of this order's
+  // duration_days (rounded to the nearest whole sachet, minimum 1), so the
+  // referrer earns proportionally the same share of the order regardless
+  // of whether it's a 1-week or 4-week package.
   let referralCredited = false;
   const { data: firstOrder, error: firstOrderError } = await db
     .from("orders")
@@ -537,23 +561,35 @@ async function confirmDelivery(clientOrderId: string, pickupDateOverride?: strin
     .limit(1)
     .maybeSingle();
 
-  if (!firstOrderError && firstOrder && firstOrder.id !== order.id && firstOrder.referred_by_phone) {
-    const referrerPhone = firstOrder.referred_by_phone;
-    const { data: referrerRow, error: referrerError } = await db
-      .from("users")
-      .select("id, referral_credits")
-      .eq("phone_number", referrerPhone)
-      .maybeSingle();
+  if (!firstOrderError && firstOrder && firstOrder.referred_by_phone) {
+    const referredWeightKg = order.body_weight_kg ?? userRow.body_weight_kg ?? 70;
+    const referredThreshold = saturationThresholdGrams(referredWeightKg);
+    const wasAlreadySaturatedBeforeThisOrder = newBaseline >= referredThreshold;
 
-    if (!referrerError && referrerRow) {
-      const { error: creditError } = await db
+    if (!wasAlreadySaturatedBeforeThisOrder) {
+      const referrerPhone = firstOrder.referred_by_phone;
+      const { data: referrerRow, error: referrerError } = await db
         .from("users")
-        .update({ referral_credits: (referrerRow.referral_credits ?? 0) + 1 })
-        .eq("id", referrerRow.id);
+        .select("id, referral_credits")
+        .eq("phone_number", referrerPhone)
+        .maybeSingle();
 
-      if (!creditError) {
-        await db.from("orders").update({ referral_credit_awarded: true }).eq("id", order.id);
-        referralCredited = true;
+      if (!referrerError && referrerRow) {
+        const durationDays = order.duration_days ?? 1;
+        const creditSachets = Math.max(1, Math.round(durationDays / 7));
+
+        const { error: creditError } = await db
+          .from("users")
+          .update({ referral_credits: (referrerRow.referral_credits ?? 0) + creditSachets })
+          .eq("id", referrerRow.id);
+
+        if (!creditError) {
+          await db
+            .from("orders")
+            .update({ referral_credit_awarded: true, referral_credit_amount: creditSachets })
+            .eq("id", order.id);
+          referralCredited = true;
+        }
       }
     }
   }
@@ -729,7 +765,7 @@ function calculateOrderFinancials(args: {
     // client's very first order ever (enforced by the caller). Written as
     // its own branch anyway so that invariant isn't load-bearing here.
     discountRate = REFERRAL_DISCOUNT_RATE;
-    discountApplied = "REFERRAL_20";
+    discountApplied = "REFERRAL_15";
   }
 
   const discountAmount = round2(grossAmount * discountRate);

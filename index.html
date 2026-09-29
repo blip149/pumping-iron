@@ -682,7 +682,7 @@
 
       <div class="info-card">
         <h4>3. Automatic VIP Streaks</h4>
-        <p>Order 4 times consecutively to unlock Ironclad VIP status with continuous 10% member discounts and periodic 30% milestone rewards.</p>
+        <p>Order 4 times consecutively to unlock Ironclad VIP status with continuous 10% member discounts and periodic 25% milestone rewards.</p>
       </div>
     </div>
   </div>
@@ -726,8 +726,8 @@
 
   function formatTierName(tierCode) {
     if (tierCode === 'VIP_10') return '10% VIP Discount';
-    if (tierCode === 'MILESTONE_30') return '30% Milestone Discount';
-    if (tierCode === 'REFERRAL_20') return '20% Referral Discount';
+    if (tierCode === 'MILESTONE_25') return '25% Milestone Discount';
+    if (tierCode === 'REFERRAL_15') return '15% Referral Discount';
     return 'Standard Rate';
   }
 
@@ -1300,7 +1300,7 @@
 
     const bannerBox = document.getElementById('discount-banner-container');
     if (m.isMilestone) {
-      bannerBox.innerHTML = `<div class="discount-banner">🎁 30% Milestone reward eligibility detected!</div>`;
+      bannerBox.innerHTML = `<div class="discount-banner">🎁 25% Milestone reward eligibility detected!</div>`;
     } else if (m.isMember) {
       bannerBox.innerHTML = `<div class="discount-banner">👑 10% Ironclad VIP member discount applied!</div>`;
     } else {

@@ -39,7 +39,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 const db = supabase.schema("v2");
 
 const MEMBER_DISCOUNT_RATE = 0.10;
-const MILESTONE_DISCOUNT_RATE = 0.30;
+const MILESTONE_DISCOUNT_RATE = 0.25;
 
 const TUB_COST_KES = 3000;
 const TUB_GRAMS = 410;
@@ -236,7 +236,7 @@ serve(async (req: Request) => {
 
         let discountRate = 0;
         let discountApplied = "NONE";
-        if (isMilestone) { discountRate = MILESTONE_DISCOUNT_RATE; discountApplied = "MILESTONE_30"; }
+        if (isMilestone) { discountRate = MILESTONE_DISCOUNT_RATE; discountApplied = "MILESTONE_25"; }
         else if (isVip) { discountRate = MEMBER_DISCOUNT_RATE; discountApplied = "VIP_10"; }
 
         const discountAmount = round2(grossAmount * discountRate);
