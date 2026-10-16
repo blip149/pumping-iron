@@ -682,7 +682,7 @@
 
       <div class="info-card">
         <h4>3. Automatic VIP Streaks</h4>
-        <p>Order 4 times consecutively to unlock Ironclad VIP status with continuous 10% member discounts and periodic 25% milestone rewards.</p>
+        <p>Order 4 times consecutively to unlock Ironclad VIP status with continuous 10% member discounts, plus free bonus sachets on every 4th order. This service is for consistent clients: until you reach saturation, collect each new batch within 3 days of the last one running out, or the account is closed. After that, we'll simply check in if you go quiet.</p>
       </div>
     </div>
   </div>
@@ -726,7 +726,6 @@
 
   function formatTierName(tierCode) {
     if (tierCode === 'VIP_10') return '10% VIP Discount';
-    if (tierCode === 'MILESTONE_25') return '25% Milestone Discount';
     if (tierCode === 'REFERRAL_15') return '15% Referral Discount';
     return 'Standard Rate';
   }
@@ -1269,6 +1268,14 @@
          </div>`
       : '';
 
+    const bonusSachets = Number(pricing.bonus_sachets) || 0;
+    const bonusRowHtml = bonusSachets > 0
+      ? `<div class="summary-row">
+           <span class="summary-label">Milestone Bonus</span>
+           <span class="summary-val">🎁 +${bonusSachets} free sachets</span>
+         </div>`
+      : '';
+
     // Only meaningful when the client bought more than their natural
     // saturation need in one go — shows the science-based number
     // untouched, plus how much of this order is the cheaper maintenance
@@ -1295,12 +1302,13 @@
       <div class="summary-row"><span class="summary-label">Location</span><span class="summary-val">${location}${gym ? ' (' + gym + ')' : ''}</span></div>
       <div class="summary-row"><span class="summary-label">Auto-Renew</span><span class="summary-val">${autoRenew ? '🔁 On (cancel anytime)' : 'Off'}</span></div>
       ${discountRowHtml}
+      ${bonusRowHtml}
       <div class="summary-row"><span class="summary-label">Final Price</span><span class="summary-val gold">${formatKES(netTotal)}</span></div>
     `;
 
     const bannerBox = document.getElementById('discount-banner-container');
     if (m.isMilestone) {
-      bannerBox.innerHTML = `<div class="discount-banner">🎁 25% Milestone reward eligibility detected!</div>`;
+      bannerBox.innerHTML = `<div class="discount-banner">🎁 Milestone reward! 10% VIP discount plus free bonus sachets worth 30% of your order.</div>`;
     } else if (m.isMember) {
       bannerBox.innerHTML = `<div class="discount-banner">👑 10% Ironclad VIP member discount applied!</div>`;
     } else {

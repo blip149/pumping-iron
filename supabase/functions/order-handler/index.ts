@@ -22,7 +22,13 @@ const IRONCLAD_TIER = "ironclad_vip";
 const LEAD_TIER = "lead";
 
 const MEMBER_DISCOUNT_RATE = 0.10;
-const MILESTONE_DISCOUNT_RATE = 0.30;
+// Milestone (every 4th paid order) is no longer a bigger price cut. The order
+// gets the normal 10% VIP discount, and then bonus sachets worth this share
+// of the DISCOUNTED price are added on top. Bonus sachets are valued at the
+// order's own net per-sachet price, so the count is simply this share of the
+// order's sachets. They are stored separately (bonus_sachets) and never added
+// to total_sachets, so dosing and renewal math stay correct.
+const MILESTONE_BONUS_RATE = 0.30;
 const REFERRAL_DISCOUNT_RATE = 0.15; // referred client's first order — tune freely
 
 // Admin/marketing referral codes — pre-issued for tracking a promotional
@@ -33,6 +39,19 @@ const REFERRAL_DISCOUNT_RATE = 0.15; // referred client's first order — tune f
 // codes here as new channels launch. Matched case-insensitively so "pm003"
 // and "PM003" are the same code.
 const ADMIN_REFERRAL_CODES = new Set(["PM001", "PM002", "PM003"]);
+
+// CONSISTENCY POLICY. Until a client has reached saturation, each new batch
+// must be picked up within CONSISTENCY_GRACE_DAYS of the previous one running
+// out; miss that window once and the account is banned. After saturation a
+// lapse never bans anyone: those clients just show up on the admin nudge
+// list. Gaps before CONSISTENCY_POLICY_START are forgiven, so existing
+// clients aren't punished retroactively. Keep GRACE_DAYS and POLICY_START
+// identical in process-renewals.
+const CONSISTENCY_GRACE_DAYS = 3;
+const CONSISTENCY_POLICY_START = new Date("2026-10-15T00:00:00+03:00");
+const NUDGE_LEAD_DAYS = 2; // start nudging this many days before a batch runs out
+const CONSISTENCY_BLOCK_MESSAGE =
+  `We can't take orders from this number. Until you reach saturation we need each batch collected within ${CONSISTENCY_GRACE_DAYS} days of the last one running out, and this account missed that window. If you think this is a mistake, message us on WhatsApp.`;
 
 const TUB_COST_KES = 3000;
 const TUB_GRAMS = 410;
@@ -204,6 +223,114 @@ async function getIroncladEligibility(phone: string) {
   const isMilestone = isVip && ((paidCount - 3) % 4 === 0);
 
   return { streakCount: paidCount, isVip, isMilestone };
+}
+
+type DeliveredOrder = {
+  confirmed_at: string;
+  duration_days: number | null;
+  grams_delivered: number | string | null;
+};
+
+// Replays a client's delivery history through the same store simulation used
+// for saturation, and works out two things: whether they have reached
+// saturation, and whether they broke the pickup schedule while still
+// building toward it. A late pickup (or no pickup at all) only counts as a
+// breach if the client had NOT yet reached saturation when that batch ran
+// out. After saturation, lapses are the nudge list's job, never a ban.
+function analyzeDeliveries(
+  delivered: DeliveredOrder[],
+  weightKg: number,
+  resetAt: string | null,
+  now: Date,
+): { saturated: boolean; breach: boolean; lastWindowEnd: Date | null; banDeadline: Date | null } {
+  if (delivered.length === 0) return { saturated: false, breach: false, lastWindowEnd: null, banDeadline: null };
+
+  const threshold = saturationThresholdGrams(weightKg);
+
+  let floor = CONSISTENCY_POLICY_START;
+  if (resetAt) {
+    const reset = new Date(resetAt);
+    if (reset > floor) floor = reset;
+  }
+
+  let store = 0;
+  let referenceDate: Date | null = null;
+  let saturated = false;
+  let breach = false;
+  let lastWindowEnd: Date | null = null;
+
+  for (let i = 0; i < delivered.length; i++) {
+    const start = new Date(delivered[i].confirmed_at);
+    const duration = delivered[i].duration_days ?? 1;
+    const windowEnd = addDays(start, duration);
+
+    const result = simulateOrderWindow({
+      storeBefore: store,
+      storeAsOfDate: referenceDate ?? start,
+      orderStart: start,
+      durationDays: duration,
+      totalGrams: Number(delivered[i].grams_delivered ?? 0),
+      threshold,
+      simulateUpTo: windowEnd,
+    });
+    store = result.store;
+    referenceDate = result.asOfDate;
+    if (result.crossedThresholdAt) saturated = true;
+    lastWindowEnd = windowEnd;
+
+    if (!saturated) {
+      const lateAfter = addDays(windowEnd > floor ? windowEnd : floor, CONSISTENCY_GRACE_DAYS);
+      const next = delivered[i + 1];
+      if (next ? new Date(next.confirmed_at) > lateAfter : now > lateAfter) breach = true;
+    }
+  }
+
+  const banDeadline = lastWindowEnd
+    ? addDays(lastWindowEnd > floor ? lastWindowEnd : floor, CONSISTENCY_GRACE_DAYS)
+    : null;
+  return { saturated, breach, lastWindowEnd, banDeadline };
+}
+
+// Decides whether this client may order. With persist=true a breach also
+// writes the ban; with persist=false it only reports (used by the admin
+// lookup). Brand-new clients (nothing delivered yet) always pass.
+async function evaluateConsistency(
+  phone: string,
+  opts: { persist: boolean },
+): Promise<{ blocked: boolean; reason?: "already_banned" | "missed_window"; saturated?: boolean }> {
+  const { data: userRow, error: userError } = await db
+    .from("users")
+    .select("id, banned_at, consistency_reset_at, body_weight_kg")
+    .eq("phone_number", phone)
+    .maybeSingle();
+  if (userError) throw new Error(`Access lookup failed: ${userError.message}`);
+
+  if (userRow?.banned_at) return { blocked: true, reason: "already_banned" };
+
+  const { data: delivered, error: deliveredError } = await db
+    .from("orders")
+    .select("confirmed_at, duration_days, grams_delivered")
+    .eq("phone_number", phone)
+    .not("confirmed_at", "is", null)
+    .order("confirmed_at", { ascending: true });
+  if (deliveredError) throw new Error(`Delivery history lookup failed: ${deliveredError.message}`);
+
+  const analysis = analyzeDeliveries(
+    delivered ?? [],
+    userRow?.body_weight_kg ?? 70,
+    userRow?.consistency_reset_at ?? null,
+    new Date(),
+  );
+  if (!analysis.breach) return { blocked: false, saturated: analysis.saturated };
+
+  if (opts.persist && userRow) {
+    const { error: banError } = await db
+      .from("users")
+      .update({ banned_at: new Date().toISOString(), ban_reason: "Missed renewal window before saturation" })
+      .eq("id", userRow.id);
+    if (banError) throw new Error(`Ban failed: ${banError.message}`);
+  }
+  return { blocked: true, reason: "missed_window", saturated: false };
 }
 
 async function isPaidOrConfirmedClient(phone: string): Promise<boolean> {
@@ -753,10 +880,9 @@ function calculateOrderFinancials(args: {
 
   let discountRate = 0;
   let discountApplied = "NONE";
-  if (args.isMilestone) {
-    discountRate = MILESTONE_DISCOUNT_RATE;
-    discountApplied = "MILESTONE_30";
-  } else if (args.isVip) {
+  // A milestone order is always a VIP order (4+ prior paid orders), so it
+  // takes the VIP 10% like any other and earns bonus sachets on top (below).
+  if (args.isVip || args.isMilestone) {
     discountRate = MEMBER_DISCOUNT_RATE;
     discountApplied = "VIP_10";
   } else if (args.isReferredFirstOrder) {
@@ -771,6 +897,17 @@ function calculateOrderFinancials(args: {
   const discountAmount = round2(grossAmount * discountRate);
   const netAmount = round2(grossAmount - discountAmount);
 
+  // Milestone bonus: sachets worth MILESTONE_BONUS_RATE of the already
+  // discounted price. At the order's net per-sachet price that is exactly
+  // MILESTONE_BONUS_RATE of its sachets, rounded down so the giveaway never
+  // overshoots the stated share. Not part of totalSachets / gramsDelivered.
+  const bonusSachets = args.isMilestone
+    ? Math.floor(totalSachets * MILESTONE_BONUS_RATE + 1e-9)
+    : 0;
+  const bonusValueKes = totalSachets > 0
+    ? round2(bonusSachets * (netAmount / totalSachets))
+    : 0;
+
   return {
     dosesPerDay,
     durationDays,
@@ -783,6 +920,8 @@ function calculateOrderFinancials(args: {
     discountApplied,
     discountRate,
     naturalDurationDays,
+    bonusSachets,
+    bonusValueKes,
   };
 }
 
@@ -825,6 +964,55 @@ function membershipPayload(eligibility: { streakCount: number; isVip: boolean; i
     is_vip: eligibility.isVip,
     is_milestone: eligibility.isMilestone,
   };
+}
+
+// Deducts credits a client has just been handed in person. The update only
+// succeeds if the balance is still what we just read, so two redemptions (or a
+// redemption landing at the same moment as a new credit) can never overwrite
+// each other. A short retry loop covers that rare collision.
+async function redeemReferralCredits(
+  phone: string,
+  credits: number,
+): Promise<
+  | { ok: true; redeemed: number; remaining: number }
+  | { ok: false; status: number; error: string }
+> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data: userRow, error: lookupError } = await db
+      .from("users")
+      .select("id, referral_credits")
+      .eq("phone_number", phone)
+      .maybeSingle();
+    if (lookupError) throw new Error(`Credit lookup failed: ${lookupError.message}`);
+    if (!userRow) return { ok: false, status: 404, error: "No client found with that phone number." };
+
+    const balance = userRow.referral_credits ?? 0;
+    if (credits > balance) {
+      return { ok: false, status: 409, error: `Only ${balance} credit(s) available — can't redeem ${credits}.` };
+    }
+
+    const remaining = balance - credits;
+    const { data: updated, error: updateError } = await db
+      .from("users")
+      .update({ referral_credits: remaining })
+      .eq("id", userRow.id)
+      .eq("referral_credits", balance)
+      .select("id");
+    if (updateError) throw new Error(`Credit update failed: ${updateError.message}`);
+
+    if (updated && updated.length > 0) {
+      // Audit trail so you can always see what was handed out and when.
+      // Best-effort: a missing log table never blocks the redemption itself.
+      const { error: logError } = await db
+        .from("referral_redemptions")
+        .insert({ phone_number: phone, credits, balance_after: remaining });
+      if (logError) console.error("Redemption log failed:", logError.message);
+
+      return { ok: true, redeemed: credits, remaining };
+    }
+    // The balance changed between our read and write — read it again.
+  }
+  return { ok: false, status: 409, error: "The balance changed while redeeming. Check it again and retry." };
 }
 
 async function getRenewalStatus(phone: string) {
@@ -1006,6 +1194,28 @@ serve(async (req: Request) => {
       }, 200);
     }
 
+    if (body?.redeem_referral_credits === true) {
+      if (!ADMIN_SECRET || body?.admin_secret !== ADMIN_SECRET) {
+        return jsonResponse({ error: "Unauthorized." }, 401);
+      }
+
+      const phone = normalizePhone(body?.phone_number);
+      if (!PHONE_REGEX.test(phone)) {
+        return jsonResponse({ error: "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX." }, 400);
+      }
+
+      const credits = Number(body?.credits);
+      if (!Number.isInteger(credits) || credits <= 0) {
+        return jsonResponse({ error: "credits must be a whole number greater than 0." }, 400);
+      }
+
+      const result = await redeemReferralCredits(phone, credits);
+      if (!result.ok) {
+        return jsonResponse({ error: result.error }, result.status);
+      }
+      return jsonResponse({ status: "redeemed", redeemed: result.redeemed, remaining: result.remaining }, 200);
+    }
+
     if (body?.validate_referrer === true) {
       const clientPhone = normalizePhone(body?.client_phone);
       // Reuses the exact same rules the quote and real-order paths enforce
@@ -1032,7 +1242,7 @@ serve(async (req: Request) => {
 
       const { data: pending, error: pendingError } = await db
         .from("orders")
-        .select("client_order_id, phone_number, plan_name, duration_days, total_sachets, net_amount, location, gym, created_at, auto_renew, confirmed_at, status")
+        .select("client_order_id, phone_number, plan_name, duration_days, total_sachets, bonus_sachets, net_amount, location, gym, created_at, auto_renew, confirmed_at, status")
         // "Pending" now means not fully processed yet — either delivery or
         // payment (or both) still outstanding. An order only drops off this
         // list once it's both delivered AND marked paid.
@@ -1044,7 +1254,152 @@ serve(async (req: Request) => {
         return jsonResponse({ error: "Failed to list pending orders.", details: pendingError.message }, 500);
       }
 
-      return jsonResponse({ status: "pending_orders", orders: pending ?? [] }, 200);
+      // Flag orders from banned clients so you don't pack them.
+      const { data: bannedRows } = await db
+        .from("users")
+        .select("phone_number")
+        .not("banned_at", "is", null);
+      const bannedPhones = new Set((bannedRows ?? []).map((r: any) => r.phone_number));
+      const orders = (pending ?? []).map((o: any) => ({ ...o, client_banned: bannedPhones.has(o.phone_number) }));
+
+      return jsonResponse({ status: "pending_orders", orders }, 200);
+    }
+
+    if (body?.get_ban_status === true) {
+      if (!ADMIN_SECRET || body?.admin_secret !== ADMIN_SECRET) {
+        return jsonResponse({ error: "Unauthorized." }, 401);
+      }
+      const phone = normalizePhone(body?.phone_number);
+      if (!PHONE_REGEX.test(phone)) {
+        return jsonResponse({ error: "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX." }, 400);
+      }
+
+      const { data: userRow, error: userError } = await db
+        .from("users")
+        .select("banned_at, ban_reason")
+        .eq("phone_number", phone)
+        .maybeSingle();
+      if (userError) return jsonResponse({ error: "Lookup failed.", details: userError.message }, 500);
+
+      const eligibility = await getIroncladEligibility(phone);
+      const check = await evaluateConsistency(phone, { persist: false });
+
+      return jsonResponse({
+        status: "ban_status",
+        client: {
+          phone,
+          known: !!userRow,
+          banned: !!userRow?.banned_at,
+          banned_at: userRow?.banned_at ?? null,
+          ban_reason: userRow?.ban_reason ?? null,
+          completed_orders: eligibility.streakCount,
+          is_member: eligibility.isVip,
+          saturated: check.saturated ?? null,
+          missed_window_now: check.reason === "missed_window",
+        },
+      }, 200);
+    }
+
+    if (body?.set_ban === true) {
+      if (!ADMIN_SECRET || body?.admin_secret !== ADMIN_SECRET) {
+        return jsonResponse({ error: "Unauthorized." }, 401);
+      }
+      const phone = normalizePhone(body?.phone_number);
+      if (!PHONE_REGEX.test(phone)) {
+        return jsonResponse({ error: "phone_number must be a valid Kenya E.164 number like +2547XXXXXXXX or +2541XXXXXXXX." }, 400);
+      }
+      const banned = body?.banned === true;
+
+      const { data: userRow, error: userError } = await db
+        .from("users")
+        .select("id")
+        .eq("phone_number", phone)
+        .maybeSingle();
+      if (userError) return jsonResponse({ error: "Lookup failed.", details: userError.message }, 500);
+      if (!userRow) return jsonResponse({ error: "No client found with that phone number." }, 404);
+
+      // Unbanning also resets the consistency clock, otherwise the same old
+      // gap would simply re-ban the client on their next order.
+      const nowIso = new Date().toISOString();
+      const update = banned
+        ? { banned_at: nowIso, ban_reason: typeof body?.reason === "string" && body.reason.trim() ? body.reason.trim() : "Banned manually" }
+        : { banned_at: null, ban_reason: null, consistency_reset_at: nowIso };
+
+      const { error: updateError } = await db.from("users").update(update).eq("id", userRow.id);
+      if (updateError) return jsonResponse({ error: "Update failed.", details: updateError.message }, 500);
+
+      return jsonResponse({ status: "ban_updated", phone, banned }, 200);
+    }
+
+    if (body?.list_nudges === true) {
+      if (!ADMIN_SECRET || body?.admin_secret !== ADMIN_SECRET) {
+        return jsonResponse({ error: "Unauthorized." }, 401);
+      }
+      const now = new Date();
+
+      const { data: users, error: usersError } = await db
+        .from("users")
+        .select("phone_number, body_weight_kg, consistency_reset_at")
+        .is("banned_at", null);
+      if (usersError) return jsonResponse({ error: "Failed to load clients.", details: usersError.message }, 500);
+
+      const { data: delivered, error: deliveredError } = await db
+        .from("orders")
+        .select("phone_number, confirmed_at, duration_days, grams_delivered")
+        .not("confirmed_at", "is", null)
+        .order("confirmed_at", { ascending: true });
+      if (deliveredError) return jsonResponse({ error: "Failed to load deliveries.", details: deliveredError.message }, 500);
+
+      // Orders a client placed themselves that haven't been delivered yet
+      // mean they're already coming back, so no nudge. Auto-renewed orders
+      // don't count: a pending one that nobody collects is exactly the case
+      // that needs a nudge.
+      const { data: waiting, error: waitingError } = await db
+        .from("orders")
+        .select("phone_number, created_at")
+        .is("confirmed_at", null)
+        .is("renewed_from_order_id", null);
+      if (waitingError) return jsonResponse({ error: "Failed to load waiting orders.", details: waitingError.message }, 500);
+
+      const deliveredByPhone = new Map<string, DeliveredOrder[]>();
+      for (const row of delivered ?? []) {
+        const list = deliveredByPhone.get(row.phone_number) ?? [];
+        list.push(row);
+        deliveredByPhone.set(row.phone_number, list);
+      }
+      const waitingByPhone = new Map<string, Date[]>();
+      for (const row of waiting ?? []) {
+        const list = waitingByPhone.get(row.phone_number) ?? [];
+        list.push(new Date(row.created_at));
+        waitingByPhone.set(row.phone_number, list);
+      }
+
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const nudges: Array<Record<string, unknown>> = [];
+      for (const user of users ?? []) {
+        const history = deliveredByPhone.get(user.phone_number);
+        if (!history || history.length === 0) continue;
+
+        const lastPickup = new Date(history[history.length - 1].confirmed_at);
+        if ((waitingByPhone.get(user.phone_number) ?? []).some((created) => created > lastPickup)) continue;
+
+        const a = analyzeDeliveries(history, user.body_weight_kg ?? 70, user.consistency_reset_at ?? null, now);
+        if (!a.lastWindowEnd) continue;
+
+        const daysToWindowEnd = (a.lastWindowEnd.getTime() - now.getTime()) / DAY_MS;
+        if (daysToWindowEnd > NUDGE_LEAD_DAYS) continue;
+
+        nudges.push({
+          phone: user.phone_number,
+          phase: a.saturated ? "saturated" : "building",
+          window_end: a.lastWindowEnd.toISOString(),
+          days_to_window_end: round2(daysToWindowEnd),
+          ban_deadline: a.saturated ? null : a.banDeadline?.toISOString() ?? null,
+        });
+      }
+      nudges.sort((x, y) => Number(x.days_to_window_end) - Number(y.days_to_window_end));
+
+      return jsonResponse({ status: "nudges", nudges }, 200);
     }
 
     const isQuote = body?.quote_only === true;
@@ -1058,6 +1413,11 @@ serve(async (req: Request) => {
     const weight = Number(body.body_weight_kg);
 
     const eligibility = await getIroncladEligibility(phone);
+
+    const access = await evaluateConsistency(phone, { persist: true });
+    if (access.blocked) {
+      return jsonResponse({ error: CONSISTENCY_BLOCK_MESSAGE, blocked: true }, 403);
+    }
     const saturation = await getCurrentSaturationStatus(phone, weight);
     const remainingGrams = Math.max(0, saturation.thresholdGrams - saturation.currentStoreGrams);
     const requestedDosesPerDay = body.doses_per_day != null ? Number(body.doses_per_day) : undefined;
@@ -1106,6 +1466,7 @@ serve(async (req: Request) => {
             discount_amount: financials.discountAmount,
             net_amount: financials.netAmount,
             discount_applied: financials.discountApplied,
+            bonus_sachets: financials.bonusSachets,
             note: `You're saturated — ${financials.dosesPerDay} sachet${financials.dosesPerDay > 1 ? 's' : ''}/day maintains it. An occasional lighter week won't cost you results.`,
           },
         }, 200);
@@ -1158,6 +1519,7 @@ serve(async (req: Request) => {
           discount_amount: financials.discountAmount,
           net_amount: financials.netAmount,
           discount_applied: financials.discountApplied,
+          bonus_sachets: financials.bonusSachets,
           natural_duration_days: financials.naturalDurationDays,
           maintenance_days: financials.maintenanceDays,
         };
@@ -1274,6 +1636,7 @@ serve(async (req: Request) => {
       net_amount: financials.netAmount,
       total_kes: financials.netAmount,
       discount_applied: financials.discountApplied,
+      bonus_sachets: financials.bonusSachets,
 
       is_milestone_reward: eligibility.isMilestone,
       auto_renew: autoRenew,
@@ -1324,6 +1687,8 @@ serve(async (req: Request) => {
         discount_amount: financials.discountAmount,
         net_amount: financials.netAmount,
         discount_applied: financials.discountApplied,
+        bonus_sachets: financials.bonusSachets,
+        bonus_value_kes: financials.bonusValueKes,
         natural_duration_days: financials.naturalDurationDays,
         maintenance_days: financials.maintenanceDays,
       },

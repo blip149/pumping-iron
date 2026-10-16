@@ -39,7 +39,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 const db = supabase.schema("v2");
 
 const MEMBER_DISCOUNT_RATE = 0.10;
-const MILESTONE_DISCOUNT_RATE = 0.25;
+// Milestone orders take the normal VIP 10% and add bonus sachets worth this
+// share of the discounted price (see the same constant in order-handler).
+const MILESTONE_BONUS_RATE = 0.30;
 
 const TUB_COST_KES = 3000;
 const TUB_GRAMS = 410;
@@ -47,6 +49,14 @@ const PPG = TUB_COST_KES / TUB_GRAMS;
 const MYLAR_SMALL = 1095 / 800;
 const MYLAR_LARGE = 1095 / 400;
 const BASE_PROFIT = 22;
+
+// CONSISTENCY POLICY — keep GRACE_DAYS and POLICY_START identical to
+// order-handler. Until a client has reached saturation, picking up a batch
+// more than CONSISTENCY_GRACE_DAYS after the previous one ran out gets them
+// banned. After saturation nobody is banned automatically (they only appear
+// on the admin nudge list). Gaps before CONSISTENCY_POLICY_START are forgiven.
+const CONSISTENCY_GRACE_DAYS = 3;
+const CONSISTENCY_POLICY_START = new Date("2026-10-15T00:00:00+03:00");
 
 const FLAT_SACHET_GRAMS = 3.0;
 const MAX_DOSES_PER_DAY = 7;
@@ -127,6 +137,124 @@ function nairobiDateOnly(d: Date): number {
   return Date.UTC(nairobi.getUTCFullYear(), nairobi.getUTCMonth(), nairobi.getUTCDate());
 }
 
+type DeliveredOrder = {
+  confirmed_at: string;
+  duration_days: number | null;
+  grams_delivered: number | string | null;
+};
+
+// Same store simulation as the live checkout, but also reports whether the
+// threshold was crossed during this order's window.
+function simulateWithCrossing(args: {
+  storeBefore: number;
+  storeAsOfDate: Date;
+  orderStart: Date;
+  durationDays: number;
+  totalGrams: number;
+  threshold: number;
+}): { store: number; asOfDate: Date; crossed: boolean } {
+  const duration = Math.max(1, args.durationDays);
+  const dailyDose = args.totalGrams / duration;
+
+  const gapDays = daysBetween(args.storeAsOfDate, args.orderStart);
+  let store = gapDays > 0 ? decayStore(args.storeBefore, gapDays) : args.storeBefore;
+
+  let crossed = false;
+  let cursor = args.orderStart;
+  for (let day = 0; day < Math.floor(duration); day++) {
+    store = Math.min(args.threshold, decayStore(store, 1) + dailyDose);
+    cursor = addDays(cursor, 1);
+    if (store >= args.threshold) crossed = true;
+  }
+  return { store, asOfDate: cursor, crossed };
+}
+
+// True if the client broke the pickup schedule while still building toward
+// saturation: a late pickup, or no pickup yet although the latest batch ran
+// out more than the grace period ago. Lapses after saturation never count.
+function hasConsistencyBreach(
+  delivered: DeliveredOrder[],
+  weightKg: number,
+  resetAt: string | null,
+  now: Date,
+): boolean {
+  if (delivered.length === 0) return false;
+
+  const threshold = saturationThresholdGrams(weightKg);
+  let floor = CONSISTENCY_POLICY_START;
+  if (resetAt) {
+    const reset = new Date(resetAt);
+    if (reset > floor) floor = reset;
+  }
+
+  let store = 0;
+  let referenceDate: Date | null = null;
+  let saturated = false;
+
+  for (let i = 0; i < delivered.length; i++) {
+    const start = new Date(delivered[i].confirmed_at);
+    const duration = delivered[i].duration_days ?? 1;
+    const windowEnd = addDays(start, duration);
+
+    const result = simulateWithCrossing({
+      storeBefore: store,
+      storeAsOfDate: referenceDate ?? start,
+      orderStart: start,
+      durationDays: duration,
+      totalGrams: Number(delivered[i].grams_delivered ?? 0),
+      threshold,
+    });
+    store = result.store;
+    referenceDate = result.asOfDate;
+    if (result.crossed) saturated = true;
+
+    if (!saturated) {
+      const lateAfter = addDays(windowEnd > floor ? windowEnd : floor, CONSISTENCY_GRACE_DAYS);
+      const next = delivered[i + 1];
+      if (next ? new Date(next.confirmed_at) > lateAfter : now > lateAfter) return true;
+    }
+  }
+  return false;
+}
+
+// Daily sweep: bans clients who missed their window before reaching
+// saturation, even if they never come back to order (so their auto-renewals
+// stop and you don't keep packing for a ghost).
+async function banInconsistentClients(now: Date): Promise<string[]> {
+  const { data: users, error: usersError } = await db
+    .from("users")
+    .select("id, phone_number, body_weight_kg, consistency_reset_at")
+    .is("banned_at", null);
+  if (usersError) throw new Error(`Users fetch failed: ${usersError.message}`);
+
+  const { data: delivered, error: deliveredError } = await db
+    .from("orders")
+    .select("phone_number, confirmed_at, duration_days, grams_delivered")
+    .not("confirmed_at", "is", null)
+    .order("confirmed_at", { ascending: true });
+  if (deliveredError) throw new Error(`Delivery fetch failed: ${deliveredError.message}`);
+
+  const deliveredByPhone = new Map<string, DeliveredOrder[]>();
+  for (const row of delivered ?? []) {
+    const list = deliveredByPhone.get(row.phone_number) ?? [];
+    list.push(row);
+    deliveredByPhone.set(row.phone_number, list);
+  }
+
+  const banned: string[] = [];
+  for (const user of users ?? []) {
+    const history = deliveredByPhone.get(user.phone_number) ?? [];
+    if (!hasConsistencyBreach(history, user.body_weight_kg ?? 70, user.consistency_reset_at ?? null, now)) continue;
+
+    const { error: banError } = await db
+      .from("users")
+      .update({ banned_at: now.toISOString(), ban_reason: "Missed renewal window before saturation" })
+      .eq("id", user.id);
+    if (!banError) banned.push(user.phone_number);
+  }
+  return banned;
+}
+
 async function countPaidOrders(phone: string): Promise<number> {
   const { count, error } = await db
     .from("orders")
@@ -147,6 +275,8 @@ serve(async (req: Request) => {
     }
 
     const now = new Date();
+
+    const bannedThisRun = await banInconsistentClients(now);
 
     // Orders that are paid, on auto-renew, not cancelled, and haven't already
     // spawned their next batch yet.
@@ -174,10 +304,20 @@ serve(async (req: Request) => {
       try {
         const { data: userRow, error: userError } = await db
           .from("users")
-          .select("id, body_weight_kg, store_grams_at_last_order, store_reference_date")
+          .select("id, body_weight_kg, store_grams_at_last_order, store_reference_date, banned_at")
           .eq("phone_number", order.phone_number)
           .maybeSingle();
         if (userError) throw new Error(`User lookup failed: ${userError.message}`);
+
+        // Banned clients get no further auto-renewed batches.
+        if (userRow?.banned_at) {
+          await db
+            .from("orders")
+            .update({ renewal_cancelled_at: now.toISOString() })
+            .eq("id", order.id);
+          results.push({ phone: order.phone_number, previous_order: order.client_order_id, status: "skipped_banned" });
+          continue;
+        }
 
         const weightKg = userRow?.body_weight_kg ?? order.body_weight_kg ?? 70;
         const threshold = saturationThresholdGrams(weightKg);
@@ -236,11 +376,16 @@ serve(async (req: Request) => {
 
         let discountRate = 0;
         let discountApplied = "NONE";
-        if (isMilestone) { discountRate = MILESTONE_DISCOUNT_RATE; discountApplied = "MILESTONE_25"; }
-        else if (isVip) { discountRate = MEMBER_DISCOUNT_RATE; discountApplied = "VIP_10"; }
+        if (isVip || isMilestone) { discountRate = MEMBER_DISCOUNT_RATE; discountApplied = "VIP_10"; }
 
         const discountAmount = round2(grossAmount * discountRate);
         const netAmount = round2(grossAmount - discountAmount);
+
+        // Bonus sachets sit outside total_sachets so the next batch's
+        // doses-per-day math (total_sachets / duration_days) stays correct.
+        const bonusSachets = isMilestone
+          ? Math.floor(totalSachets * MILESTONE_BONUS_RATE + 1e-9)
+          : 0;
 
         const newOrderId = crypto.randomUUID();
 
@@ -255,6 +400,7 @@ serve(async (req: Request) => {
             body_weight_kg: weightKg,
             duration_days: nextDurationDays,
             total_sachets: totalSachets,
+            bonus_sachets: bonusSachets,
             location: order.location,
             gym: order.gym,
             message: "Auto-renewed batch — awaiting delivery and payment confirmation.",
@@ -296,7 +442,7 @@ serve(async (req: Request) => {
       }
     }
 
-    return new Response(JSON.stringify({ processed: results.length, results }), {
+    return new Response(JSON.stringify({ processed: results.length, banned_for_inconsistency: bannedThisRun, results }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
