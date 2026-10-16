@@ -40,18 +40,22 @@ const REFERRAL_DISCOUNT_RATE = 0.15; // referred client's first order — tune f
 // and "PM003" are the same code.
 const ADMIN_REFERRAL_CODES = new Set(["PM001", "PM002", "PM003"]);
 
-// CONSISTENCY POLICY. Until a client has reached saturation, each new batch
-// must be picked up within CONSISTENCY_GRACE_DAYS of the previous one running
-// out; miss that window once and the account is banned. After saturation a
-// lapse never bans anyone: those clients just show up on the admin nudge
-// list. Gaps before CONSISTENCY_POLICY_START are forgiven, so existing
-// clients aren't punished retroactively. Keep GRACE_DAYS and POLICY_START
-// identical in process-renewals.
+// CONSISTENCY POLICY. A client is "protected" only once they have reached
+// BOTH saturation AND membership (MEMBERSHIP_PAID_ORDERS paid orders), so the
+// strict zone lasts until whichever of the two comes later. While not
+// protected, each new batch must be picked up within CONSISTENCY_GRACE_DAYS
+// of the previous one running out; miss that window once and the account is
+// banned. Once protected, a lapse never bans anyone: those clients just show
+// up on the admin nudge list. Everyone gets a nudge NUDGE_LEAD_DAYS before
+// their plan runs out. Gaps before CONSISTENCY_POLICY_START are forgiven, so
+// existing clients aren't punished retroactively. Keep GRACE_DAYS,
+// POLICY_START and MEMBERSHIP_PAID_ORDERS identical in process-renewals.
 const CONSISTENCY_GRACE_DAYS = 3;
 const CONSISTENCY_POLICY_START = new Date("2026-10-15T00:00:00+03:00");
-const NUDGE_LEAD_DAYS = 2; // start nudging this many days before a batch runs out
+const MEMBERSHIP_PAID_ORDERS = 4;
+const NUDGE_LEAD_DAYS = 1; // nudge a day before the plan runs out
 const CONSISTENCY_BLOCK_MESSAGE =
-  `We can't take orders from this number. Until you reach saturation we need each batch collected within ${CONSISTENCY_GRACE_DAYS} days of the last one running out, and this account missed that window. If you think this is a mistake, message us on WhatsApp.`;
+  `We can't take orders from this number. Until you've reached saturation and membership (${MEMBERSHIP_PAID_ORDERS} orders) we need each batch collected within ${CONSISTENCY_GRACE_DAYS} days of the last one running out, and this account missed that window. If you think this is a mistake, message us on WhatsApp.`;
 
 const TUB_COST_KES = 3000;
 const TUB_GRAMS = 410;
@@ -229,21 +233,31 @@ type DeliveredOrder = {
   confirmed_at: string;
   duration_days: number | null;
   grams_delivered: number | string | null;
+  status: string | null;
 };
 
 // Replays a client's delivery history through the same store simulation used
-// for saturation, and works out two things: whether they have reached
-// saturation, and whether they broke the pickup schedule while still
-// building toward it. A late pickup (or no pickup at all) only counts as a
-// breach if the client had NOT yet reached saturation when that batch ran
-// out. After saturation, lapses are the nudge list's job, never a ban.
+// for saturation, tracking two things as it goes: whether they have reached
+// saturation and whether they have reached membership (paid orders). A late
+// pickup (or no pickup at all) is a breach only if the client was NOT yet
+// protected (saturated AND a member) when that batch ran out. After that,
+// lapses are the nudge list's job, never a ban.
 function analyzeDeliveries(
   delivered: DeliveredOrder[],
   weightKg: number,
   resetAt: string | null,
   now: Date,
-): { saturated: boolean; breach: boolean; lastWindowEnd: Date | null; banDeadline: Date | null } {
-  if (delivered.length === 0) return { saturated: false, breach: false, lastWindowEnd: null, banDeadline: null };
+): {
+  saturated: boolean;
+  member: boolean;
+  protectedNow: boolean;
+  breach: boolean;
+  lastWindowEnd: Date | null;
+  banDeadline: Date | null;
+} {
+  if (delivered.length === 0) {
+    return { saturated: false, member: false, protectedNow: false, breach: false, lastWindowEnd: null, banDeadline: null };
+  }
 
   const threshold = saturationThresholdGrams(weightKg);
 
@@ -256,6 +270,8 @@ function analyzeDeliveries(
   let store = 0;
   let referenceDate: Date | null = null;
   let saturated = false;
+  let paidSoFar = 0;
+  let member = false;
   let breach = false;
   let lastWindowEnd: Date | null = null;
 
@@ -276,9 +292,11 @@ function analyzeDeliveries(
     store = result.store;
     referenceDate = result.asOfDate;
     if (result.crossedThresholdAt) saturated = true;
+    if (delivered[i].status === "paid") paidSoFar++;
+    member = paidSoFar >= MEMBERSHIP_PAID_ORDERS;
     lastWindowEnd = windowEnd;
 
-    if (!saturated) {
+    if (!(saturated && member)) {
       const lateAfter = addDays(windowEnd > floor ? windowEnd : floor, CONSISTENCY_GRACE_DAYS);
       const next = delivered[i + 1];
       if (next ? new Date(next.confirmed_at) > lateAfter : now > lateAfter) breach = true;
@@ -288,7 +306,7 @@ function analyzeDeliveries(
   const banDeadline = lastWindowEnd
     ? addDays(lastWindowEnd > floor ? lastWindowEnd : floor, CONSISTENCY_GRACE_DAYS)
     : null;
-  return { saturated, breach, lastWindowEnd, banDeadline };
+  return { saturated, member, protectedNow: saturated && member, breach, lastWindowEnd, banDeadline };
 }
 
 // Decides whether this client may order. With persist=true a breach also
@@ -297,7 +315,7 @@ function analyzeDeliveries(
 async function evaluateConsistency(
   phone: string,
   opts: { persist: boolean },
-): Promise<{ blocked: boolean; reason?: "already_banned" | "missed_window"; saturated?: boolean }> {
+): Promise<{ blocked: boolean; reason?: "already_banned" | "missed_window"; saturated?: boolean; member?: boolean; protectedNow?: boolean }> {
   const { data: userRow, error: userError } = await db
     .from("users")
     .select("id, banned_at, consistency_reset_at, body_weight_kg")
@@ -309,7 +327,7 @@ async function evaluateConsistency(
 
   const { data: delivered, error: deliveredError } = await db
     .from("orders")
-    .select("confirmed_at, duration_days, grams_delivered")
+    .select("confirmed_at, duration_days, grams_delivered, status")
     .eq("phone_number", phone)
     .not("confirmed_at", "is", null)
     .order("confirmed_at", { ascending: true });
@@ -321,16 +339,17 @@ async function evaluateConsistency(
     userRow?.consistency_reset_at ?? null,
     new Date(),
   );
-  if (!analysis.breach) return { blocked: false, saturated: analysis.saturated };
+  const flags = { saturated: analysis.saturated, member: analysis.member, protectedNow: analysis.protectedNow };
+  if (!analysis.breach) return { blocked: false, ...flags };
 
   if (opts.persist && userRow) {
     const { error: banError } = await db
       .from("users")
-      .update({ banned_at: new Date().toISOString(), ban_reason: "Missed renewal window before saturation" })
+      .update({ banned_at: new Date().toISOString(), ban_reason: "Missed renewal window before saturation and membership" })
       .eq("id", userRow.id);
     if (banError) throw new Error(`Ban failed: ${banError.message}`);
   }
-  return { blocked: true, reason: "missed_window", saturated: false };
+  return { blocked: true, reason: "missed_window", ...flags };
 }
 
 async function isPaidOrConfirmedClient(phone: string): Promise<boolean> {
@@ -1295,6 +1314,7 @@ serve(async (req: Request) => {
           completed_orders: eligibility.streakCount,
           is_member: eligibility.isVip,
           saturated: check.saturated ?? null,
+          protected: check.protectedNow ?? null,
           missed_window_now: check.reason === "missed_window",
         },
       }, 200);
@@ -1345,7 +1365,7 @@ serve(async (req: Request) => {
 
       const { data: delivered, error: deliveredError } = await db
         .from("orders")
-        .select("phone_number, confirmed_at, duration_days, grams_delivered")
+        .select("phone_number, confirmed_at, duration_days, grams_delivered, status")
         .not("confirmed_at", "is", null)
         .order("confirmed_at", { ascending: true });
       if (deliveredError) return jsonResponse({ error: "Failed to load deliveries.", details: deliveredError.message }, 500);
@@ -1391,10 +1411,13 @@ serve(async (req: Request) => {
 
         nudges.push({
           phone: user.phone_number,
-          phase: a.saturated ? "saturated" : "building",
+          // "strict" = not yet saturated AND a member, so a late pickup bans.
+          phase: a.protectedNow ? "protected" : "strict",
+          saturated: a.saturated,
+          member: a.member,
           window_end: a.lastWindowEnd.toISOString(),
           days_to_window_end: round2(daysToWindowEnd),
-          ban_deadline: a.saturated ? null : a.banDeadline?.toISOString() ?? null,
+          ban_deadline: a.protectedNow ? null : a.banDeadline?.toISOString() ?? null,
         });
       }
       nudges.sort((x, y) => Number(x.days_to_window_end) - Number(y.days_to_window_end));

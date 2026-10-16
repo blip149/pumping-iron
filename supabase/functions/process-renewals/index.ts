@@ -50,13 +50,16 @@ const MYLAR_SMALL = 1095 / 800;
 const MYLAR_LARGE = 1095 / 400;
 const BASE_PROFIT = 22;
 
-// CONSISTENCY POLICY — keep GRACE_DAYS and POLICY_START identical to
-// order-handler. Until a client has reached saturation, picking up a batch
-// more than CONSISTENCY_GRACE_DAYS after the previous one ran out gets them
-// banned. After saturation nobody is banned automatically (they only appear
-// on the admin nudge list). Gaps before CONSISTENCY_POLICY_START are forgiven.
+// CONSISTENCY POLICY — keep these three values identical to order-handler.
+// A client is protected only once they have reached BOTH saturation AND
+// membership (MEMBERSHIP_PAID_ORDERS paid orders). Until then, picking up a
+// batch more than CONSISTENCY_GRACE_DAYS after the previous one ran out gets
+// them banned. Once protected nobody is banned automatically (they only
+// appear on the admin nudge list). Gaps before CONSISTENCY_POLICY_START are
+// forgiven.
 const CONSISTENCY_GRACE_DAYS = 3;
 const CONSISTENCY_POLICY_START = new Date("2026-10-15T00:00:00+03:00");
+const MEMBERSHIP_PAID_ORDERS = 4;
 
 const FLAT_SACHET_GRAMS = 3.0;
 const MAX_DOSES_PER_DAY = 7;
@@ -141,6 +144,7 @@ type DeliveredOrder = {
   confirmed_at: string;
   duration_days: number | null;
   grams_delivered: number | string | null;
+  status: string | null;
 };
 
 // Same store simulation as the live checkout, but also reports whether the
@@ -169,9 +173,10 @@ function simulateWithCrossing(args: {
   return { store, asOfDate: cursor, crossed };
 }
 
-// True if the client broke the pickup schedule while still building toward
-// saturation: a late pickup, or no pickup yet although the latest batch ran
-// out more than the grace period ago. Lapses after saturation never count.
+// True if the client broke the pickup schedule before becoming protected
+// (saturated AND a member): a late pickup, or no pickup yet although the
+// latest batch ran out more than the grace period ago. Lapses after both
+// milestones never count.
 function hasConsistencyBreach(
   delivered: DeliveredOrder[],
   weightKg: number,
@@ -190,6 +195,7 @@ function hasConsistencyBreach(
   let store = 0;
   let referenceDate: Date | null = null;
   let saturated = false;
+  let paidSoFar = 0;
 
   for (let i = 0; i < delivered.length; i++) {
     const start = new Date(delivered[i].confirmed_at);
@@ -207,8 +213,10 @@ function hasConsistencyBreach(
     store = result.store;
     referenceDate = result.asOfDate;
     if (result.crossed) saturated = true;
+    if (delivered[i].status === "paid") paidSoFar++;
+    const member = paidSoFar >= MEMBERSHIP_PAID_ORDERS;
 
-    if (!saturated) {
+    if (!(saturated && member)) {
       const lateAfter = addDays(windowEnd > floor ? windowEnd : floor, CONSISTENCY_GRACE_DAYS);
       const next = delivered[i + 1];
       if (next ? new Date(next.confirmed_at) > lateAfter : now > lateAfter) return true;
@@ -217,8 +225,8 @@ function hasConsistencyBreach(
   return false;
 }
 
-// Daily sweep: bans clients who missed their window before reaching
-// saturation, even if they never come back to order (so their auto-renewals
+// Daily sweep: bans clients who missed their window before becoming
+// protected (saturated and a member), even if they never come back to order (so their auto-renewals
 // stop and you don't keep packing for a ghost).
 async function banInconsistentClients(now: Date): Promise<string[]> {
   const { data: users, error: usersError } = await db
@@ -229,7 +237,7 @@ async function banInconsistentClients(now: Date): Promise<string[]> {
 
   const { data: delivered, error: deliveredError } = await db
     .from("orders")
-    .select("phone_number, confirmed_at, duration_days, grams_delivered")
+    .select("phone_number, confirmed_at, duration_days, grams_delivered, status")
     .not("confirmed_at", "is", null)
     .order("confirmed_at", { ascending: true });
   if (deliveredError) throw new Error(`Delivery fetch failed: ${deliveredError.message}`);
@@ -248,7 +256,7 @@ async function banInconsistentClients(now: Date): Promise<string[]> {
 
     const { error: banError } = await db
       .from("users")
-      .update({ banned_at: now.toISOString(), ban_reason: "Missed renewal window before saturation" })
+      .update({ banned_at: now.toISOString(), ban_reason: "Missed renewal window before saturation and membership" })
       .eq("id", user.id);
     if (!banError) banned.push(user.phone_number);
   }

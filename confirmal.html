@@ -99,13 +99,13 @@
       <strong>Who needs a nudge</strong>
       <button class="secondary" onclick="loadNudges()">Refresh</button>
     </div>
-    <p class="subtitle" style="margin:0.35rem 0 0.9rem;">Batches ending within 2 days or already finished. Clients still building toward saturation are banned automatically once 3 days late, so reach them first. Saturated clients are only ever nudged.</p>
+    <p class="subtitle" style="margin:0.35rem 0 0.9rem;">Batches ending within a day or already finished. Clients who aren't yet both saturated and a member are banned automatically once 3 days late, so reach them first. Everyone else is only ever nudged.</p>
     <div id="nudge-list"></div>
   </div>
 
   <div class="card" id="access-card" style="display:none;">
     <strong>Client Access</strong>
-    <p class="subtitle" style="margin:0.35rem 0 0.9rem;">Clients who miss a pickup before reaching saturation are banned automatically. After saturation they are only nudged. Check, ban or unban a number here; unbanning or giving grace restarts their clock.</p>
+    <p class="subtitle" style="margin:0.35rem 0 0.9rem;">Clients who miss a pickup before they are both saturated and a member are banned automatically. After that they are only nudged. Check, ban or unban a number here; unbanning or giving grace restarts their clock.</p>
     <input type="text" id="access-phone" placeholder="+2547XXXXXXXX">
     <button style="margin-top:0.6rem;" onclick="checkClientAccess()">Check Client</button>
     <div id="access-status" class="status-msg"></div>
@@ -151,6 +151,8 @@
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok && !json.error) json.error = `Request failed (${res.status})`;
+    // Admin page only: show the database's own reason so a failure is diagnosable.
+    if (json.error && json.details) json.error = `${json.error} (${json.details})`;
     return json;
   }
 
@@ -299,9 +301,9 @@
     const days = Math.max(1, Math.ceil(-n.days_to_window_end));
     const plural = days === 1 ? '' : 's';
 
-    if (n.phase === 'building') {
+    if (n.phase === 'strict') {
       return upcoming
-        ? `Hi! Your creatine batch runs out on ${fmt(n.window_end)}. Want me to prep your next one so you stay on track to saturation? Just reply YES. While you're still building up, I need each batch collected within 3 days of the last one ending.`
+        ? `Hi! Your creatine batch runs out on ${fmt(n.window_end)}. Want me to prep your next one? Just reply YES. Until you've reached saturation and membership, I need each batch collected within 3 days of the last one ending.`
         : `Hi! Your batch ran out ${days} day${plural} ago. To keep your spot I need your next pickup by ${fmt(n.ban_deadline)}. Reply and I'll have it ready.`;
     }
     return upcoming
@@ -324,9 +326,10 @@
       list.innerHTML = nudges.map(n => {
         const d = n.days_to_window_end;
         const timing = d > 0 ? `runs out in ${Math.ceil(d)} day(s)` : `ran out ${Math.max(1, Math.ceil(-d))} day(s) ago`;
-        const tag = n.phase === 'building'
-          ? `<span style="color:var(--accent-red);">building, banned after ${new Date(n.ban_deadline).toLocaleDateString('en-KE', { day: 'numeric', month: 'short' })}</span>`
-          : `<span style="color:var(--text-muted);">saturated, nudge only</span>`;
+        const why = n.saturated ? 'saturated, not yet a member' : (n.member ? 'a member, not yet saturated' : 'not yet saturated or a member');
+        const tag = n.phase === 'strict'
+          ? `<span style="color:var(--accent-red);">${why} - banned after ${new Date(n.ban_deadline).toLocaleDateString('en-KE', { day: 'numeric', month: 'short' })}</span>`
+          : `<span style="color:var(--text-muted);">saturated and a member - nudge only</span>`;
         const link = `https://wa.me/${n.phone.replace('+', '')}?text=${encodeURIComponent(nudgeMessage(n))}`;
         return `
         <div class="order-row">
@@ -363,8 +366,8 @@
         return;
       }
 
-      const phase = c.saturated === true ? ' \u00b7 saturated (nudge only)' : c.saturated === false ? ' \u00b7 still building (strict)' : '';
-      const lines = [`${c.completed_orders} paid order(s)${c.is_member ? ' \u00b7 member' : ''}${phase}`];
+      const phase = c.protected === true ? ' - saturated and a member (nudge only)' : c.protected === false ? ' - not yet both saturated and a member (strict)' : '';
+      const lines = [`${c.completed_orders} paid order(s)${phase}`];
       if (c.banned) lines.push(`BANNED${c.ban_reason ? ' \u2014 ' + c.ban_reason : ''}`);
       else if (c.missed_window_now) lines.push('Missed their renewal window \u2014 will be banned on their next order or the next daily sweep.');
       else lines.push('In good standing.');
