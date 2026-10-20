@@ -62,7 +62,12 @@ const CONSISTENCY_POLICY_START = new Date("2026-10-15T00:00:00+03:00");
 const MEMBERSHIP_PAID_ORDERS = 4;
 
 const FLAT_SACHET_GRAMS = 3.0;
-const MAX_DOSES_PER_DAY = 7;
+const MAX_DOSES_PER_DAY = 3; // matches order-handler: checkout never sells more than 3x/day
+// Clients at/over this weight are locked to 2x/day while saturating (same rule
+// and same price as order-handler: the standard 2x/day formula). Once
+// saturated they drop to the normal 1x/day maintenance batch.
+const HEAVY_CLIENT_THRESHOLD_KG = 80;
+const HEAVY_CLIENT_DOSES_PER_DAY = 2;
 const MAINTENANCE_BATCH_DAYS = 14;
 const WEEKLY_BATCH_DAYS = 7;
 const MIN_BATCH_DAYS = 6; // a batch is never delivered as fewer than this many days
@@ -360,9 +365,12 @@ serve(async (req: Request) => {
           nextDurationDays = MAINTENANCE_BATCH_DAYS;
           nextPlanName = "Maintenance (1x/day)";
         } else {
-          // Same pace the client originally chose for this batch.
+          // Same pace the client originally chose for this batch, except
+          // heavy clients, who are always held to the locked 2x/day.
           const previousDosesPerDay = Math.max(1, Math.round((order.total_sachets ?? 0) / durationDays));
-          nextDosesPerDay = Math.min(MAX_DOSES_PER_DAY, previousDosesPerDay);
+          nextDosesPerDay = weightKg >= HEAVY_CLIENT_THRESHOLD_KG
+            ? HEAVY_CLIENT_DOSES_PER_DAY
+            : Math.min(MAX_DOSES_PER_DAY, previousDosesPerDay);
 
           const remainingGrams = Math.max(0, threshold - currentStore);
           const gramsPerDay = nextDosesPerDay * FLAT_SACHET_GRAMS;

@@ -762,14 +762,13 @@ const MAX_DOSES_PER_DAY = 3; // no rush to saturate — don't overwhelm the body
 const MAINTENANCE_BATCH_DAYS = 14;
 const WEEKLY_BATCH_DAYS = 7; // the floor for an auto-sized (no duration picked) order
 
-// Clients over this weight are locked to a fixed 2x/day at a flat combined
-// day-rate, in BOTH the saturation and maintenance phases — no tier choice,
-// no cheaper 1x/day maintenance step-down. Heavier clients need more
-// product either way, so this replaces the normal per-dose formula
-// entirely for this bracket rather than sitting on top of it.
+// Clients at/over this weight are locked to 2x/day while saturating (no tier
+// choice) because their larger store would take too long at 1x/day. Pricing
+// is the SAME math as everyone's 2x plan (dailyCostForDoses(2)), and once
+// saturated, or past their natural saturation days, they drop to the normal
+// 1x/day maintenance bucket exactly like other clients.
 const HEAVY_CLIENT_THRESHOLD_KG = 80;
 const HEAVY_CLIENT_DOSES_PER_DAY = 2;
-const HEAVY_CLIENT_DAILY_PRICE = 70; // flat, both sachets combined
 
 // price(n) = 46 - 9*(n-1)/n — approaches but can never reach/exceed a
 // 9 KES/sachet discount, at any dose frequency, by construction.
@@ -828,30 +827,14 @@ function calculateOrderFinancials(args: {
   let durationDays: number;
   let naturalDurationDays: number | null = null;
   // The split that actually drives pricing/dosing below: saturationDays get
-  // dosed at `dosesPerDay` (at saturationDailyCostOverride if set, else the
-  // normal formula), maintenanceDays always get dosed at flat 1/day. A
+  // dosed at `dosesPerDay` (at the normal formula), maintenanceDays always get dosed at flat 1/day. A
   // client-selected duration never changes naturalDurationDays (the
   // science) — it only decides how much of THIS order's total falls on
   // each side of that number.
   let saturationDays = 0;
   let maintenanceDays = 0;
-  let saturationDailyCostOverride: number | null = null;
 
-  if (args.bodyWeightKg > HEAVY_CLIENT_THRESHOLD_KG) {
-    dosesPerDay = HEAVY_CLIENT_DOSES_PER_DAY;
-    saturationDailyCostOverride = HEAVY_CLIENT_DAILY_PRICE;
-
-    if (args.isSaturated) {
-      durationDays = args.requestedDurationDays ?? MAINTENANCE_BATCH_DAYS;
-    } else {
-      naturalDurationDays = Math.max(1, Math.ceil(args.remainingGrams / (dosesPerDay * FLAT_SACHET_GRAMS)));
-      durationDays = args.requestedDurationDays ?? Math.max(WEEKLY_BATCH_DAYS, naturalDurationDays);
-    }
-    // Every day is dosed at the fixed rate above — heavy clients never
-    // drop to the flat-1/day maintenance bucket other clients get once
-    // saturated or once they overshoot their natural need.
-    saturationDays = durationDays;
-  } else if (args.isSaturated) {
+  if (args.isSaturated) {
     // Maintenance: fixed dose, no speed tiers — more than 1/day does
     // nothing extra once saturated, so we never sell it. Already a pure
     // maintenance purchase, so a client-selected duration is honored
@@ -861,7 +844,10 @@ function calculateOrderFinancials(args: {
     maintenanceDays = durationDays;
   } else {
     const menu = generateSaturationTierMenu(args.remainingGrams);
-    const chosen = menu.find((t) => t.dosesPerDay === args.requestedDosesPerDay) ?? menu[0];
+    const wanted = args.bodyWeightKg >= HEAVY_CLIENT_THRESHOLD_KG
+      ? HEAVY_CLIENT_DOSES_PER_DAY
+      : args.requestedDosesPerDay;
+    const chosen = menu.find((t) => t.dosesPerDay === wanted) ?? menu[0];
     if (!chosen) {
       throw new Error("No valid saturation tier available for this weight.");
     }
@@ -892,7 +878,7 @@ function calculateOrderFinancials(args: {
 
   const totalSachets = (dosesPerDay * saturationDays) + (1 * maintenanceDays);
   const gramsDelivered = round2(totalSachets * FLAT_SACHET_GRAMS);
-  const saturationDailyCost = saturationDailyCostOverride ?? dailyCostForDoses(dosesPerDay);
+  const saturationDailyCost = dailyCostForDoses(dosesPerDay);
   const grossAmount = round2(
     (saturationDailyCost * saturationDays) + (dailyCostForDoses(1) * maintenanceDays)
   );
@@ -1495,21 +1481,16 @@ serve(async (req: Request) => {
         }, 200);
       }
 
-      // Heavy clients (>80kg) are locked to a fixed 2x/day at a flat rate —
+      // Heavy clients (>=80kg) are locked to 2x/day at the standard 2x price —
       // show them only that one option rather than a menu of tiers that
       // calculateOrderFinancials would silently override anyway. Avoids any
       // chance of the frontend showing a price for a tier the client can't
       // actually get.
       let menu;
-      if (weight > HEAVY_CLIENT_THRESHOLD_KG) {
-        const heavyDaysToSaturate = Math.max(1, Math.ceil(remainingGrams / (HEAVY_CLIENT_DOSES_PER_DAY * FLAT_SACHET_GRAMS)));
-        menu = [{
-          dosesPerDay: HEAVY_CLIENT_DOSES_PER_DAY,
-          daysToSaturate: heavyDaysToSaturate,
-          dailyCost: HEAVY_CLIENT_DAILY_PRICE,
-          totalCost: round2(HEAVY_CLIENT_DAILY_PRICE * heavyDaysToSaturate),
-          totalSachets: HEAVY_CLIENT_DOSES_PER_DAY * heavyDaysToSaturate,
-        }];
+      if (weight >= HEAVY_CLIENT_THRESHOLD_KG) {
+        menu = generateSaturationTierMenu(remainingGrams).filter(
+          (t) => t.dosesPerDay === HEAVY_CLIENT_DOSES_PER_DAY,
+        );
       } else {
         menu = generateSaturationTierMenu(remainingGrams);
       }
