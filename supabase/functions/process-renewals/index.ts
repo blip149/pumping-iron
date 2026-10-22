@@ -14,6 +14,9 @@
 //                         maintenance batch — batching just stops on its
 //                         own once the goal is reached
 //
+// Membership (VIP 10% + milestone bonus) comes from the same consecutive-order
+// streak tracker as the checkout function: 4 consecutive orders earn it.
+//
 // New orders land as PENDING (confirmed_at: null) — you still deliver and
 // call confirm_delivery yourself; that's the only place store_grams_at_last_order
 // gets advanced, so this cron never touches it directly.
@@ -50,16 +53,16 @@ const MYLAR_SMALL = 1095 / 800;
 const MYLAR_LARGE = 1095 / 400;
 const BASE_PROFIT = 22;
 
-// CONSISTENCY POLICY — keep these three values identical to order-handler.
-// A client is protected only once they have reached BOTH saturation AND
-// membership (MEMBERSHIP_PAID_ORDERS paid orders). Until then, picking up a
-// batch more than CONSISTENCY_GRACE_DAYS after the previous one ran out gets
-// them banned. Once protected nobody is banned automatically (they only
-// appear on the admin nudge list). Gaps before CONSISTENCY_POLICY_START are
+// MEMBERSHIP STREAK TRACKER — keep these three constants and computeStreak()
+// identical to order-handler. Membership is earned only by
+// MEMBERSHIP_STREAK_ORDERS consecutive orders; an order counts once it is paid
+// and picked up, and is consecutive when collected within STREAK_GRACE_DAYS of
+// the previous batch ending. A later pickup restarts the streak at 1. Nobody
+// is banned or blocked. Gaps that ended before STREAK_TRACKING_START are
 // forgiven.
-const CONSISTENCY_GRACE_DAYS = 3;
-const CONSISTENCY_POLICY_START = new Date("2026-10-15T00:00:00+03:00");
-const MEMBERSHIP_PAID_ORDERS = 4;
+const MEMBERSHIP_STREAK_ORDERS = 4;
+const STREAK_GRACE_DAYS = 3;
+const STREAK_TRACKING_START = new Date("2026-10-15T00:00:00+03:00");
 
 const FLAT_SACHET_GRAMS = 3.0;
 const MAX_DOSES_PER_DAY = 3; // matches order-handler: checkout never sells more than 3x/day
@@ -148,134 +151,79 @@ function nairobiDateOnly(d: Date): number {
 type DeliveredOrder = {
   confirmed_at: string;
   duration_days: number | null;
-  grams_delivered: number | string | null;
-  status: string | null;
 };
 
-// Same store simulation as the live checkout, but also reports whether the
-// threshold was crossed during this order's window.
-function simulateWithCrossing(args: {
-  storeBefore: number;
-  storeAsOfDate: Date;
-  orderStart: Date;
-  durationDays: number;
-  totalGrams: number;
-  threshold: number;
-}): { store: number; asOfDate: Date; crossed: boolean } {
-  const duration = Math.max(1, args.durationDays);
-  const dailyDose = args.totalGrams / duration;
+type StreakInfo = {
+  streak: number;
+  bestStreak: number;
+  member: boolean;
+  alive: boolean;
+  lastWindowEnd: Date | null;
+  pickupDeadline: Date | null;
+};
 
-  const gapDays = daysBetween(args.storeAsOfDate, args.orderStart);
-  let store = gapDays > 0 ? decayStore(args.storeBefore, gapDays) : args.storeBefore;
+// Identical to computeStreak in order-handler.
+function computeStreak(orders: DeliveredOrder[], now: Date): StreakInfo {
+  let streak = 0;
+  let best = 0;
+  let lastEnd: Date | null = null;
 
-  let crossed = false;
-  let cursor = args.orderStart;
-  for (let day = 0; day < Math.floor(duration); day++) {
-    store = Math.min(args.threshold, decayStore(store, 1) + dailyDose);
-    cursor = addDays(cursor, 1);
-    if (store >= args.threshold) crossed = true;
-  }
-  return { store, asOfDate: cursor, crossed };
-}
-
-// True if the client broke the pickup schedule before becoming protected
-// (saturated AND a member): a late pickup, or no pickup yet although the
-// latest batch ran out more than the grace period ago. Lapses after both
-// milestones never count.
-function hasConsistencyBreach(
-  delivered: DeliveredOrder[],
-  weightKg: number,
-  resetAt: string | null,
-  now: Date,
-): boolean {
-  if (delivered.length === 0) return false;
-
-  const threshold = saturationThresholdGrams(weightKg);
-  let floor = CONSISTENCY_POLICY_START;
-  if (resetAt) {
-    const reset = new Date(resetAt);
-    if (reset > floor) floor = reset;
-  }
-
-  let store = 0;
-  let referenceDate: Date | null = null;
-  let saturated = false;
-  let paidSoFar = 0;
-
-  for (let i = 0; i < delivered.length; i++) {
-    const start = new Date(delivered[i].confirmed_at);
-    const duration = delivered[i].duration_days ?? 1;
-    const windowEnd = addDays(start, duration);
-
-    const result = simulateWithCrossing({
-      storeBefore: store,
-      storeAsOfDate: referenceDate ?? start,
-      orderStart: start,
-      durationDays: duration,
-      totalGrams: Number(delivered[i].grams_delivered ?? 0),
-      threshold,
-    });
-    store = result.store;
-    referenceDate = result.asOfDate;
-    if (result.crossed) saturated = true;
-    if (delivered[i].status === "paid") paidSoFar++;
-    const member = paidSoFar >= MEMBERSHIP_PAID_ORDERS;
-
-    if (!(saturated && member)) {
-      const lateAfter = addDays(windowEnd > floor ? windowEnd : floor, CONSISTENCY_GRACE_DAYS);
-      const next = delivered[i + 1];
-      if (next ? new Date(next.confirmed_at) > lateAfter : now > lateAfter) return true;
+  for (const o of orders) {
+    const start = new Date(o.confirmed_at);
+    if (lastEnd === null) {
+      streak = 1;
+    } else {
+      const from = lastEnd > STREAK_TRACKING_START ? lastEnd : STREAK_TRACKING_START;
+      streak = start <= addDays(from, STREAK_GRACE_DAYS) ? streak + 1 : 1;
     }
+    if (streak > best) best = streak;
+    lastEnd = addDays(start, o.duration_days ?? 1);
   }
-  return false;
+
+  if (lastEnd === null) {
+    return { streak: 0, bestStreak: 0, member: false, alive: false, lastWindowEnd: null, pickupDeadline: null };
+  }
+
+  const deadline = addDays(lastEnd > STREAK_TRACKING_START ? lastEnd : STREAK_TRACKING_START, STREAK_GRACE_DAYS);
+  const alive = now <= deadline;
+  return {
+    streak: alive ? streak : 0,
+    bestStreak: best,
+    member: best >= MEMBERSHIP_STREAK_ORDERS,
+    alive,
+    lastWindowEnd: lastEnd,
+    pickupDeadline: alive ? deadline : null,
+  };
 }
 
-// Daily sweep: bans clients who missed their window before becoming
-// protected (saturated and a member), even if they never come back to order (so their auto-renewals
-// stop and you don't keep packing for a ghost).
-async function banInconsistentClients(now: Date): Promise<string[]> {
-  const { data: users, error: usersError } = await db
-    .from("users")
-    .select("id, phone_number, body_weight_kg, consistency_reset_at")
-    .is("banned_at", null);
-  if (usersError) throw new Error(`Users fetch failed: ${usersError.message}`);
-
-  const { data: delivered, error: deliveredError } = await db
+// Paid AND picked-up orders only, same as the checkout's eligibility lookup.
+async function getMembership(phone: string, now: Date): Promise<{ isVip: boolean; completedCount: number }> {
+  const { data, error } = await db
     .from("orders")
-    .select("phone_number, confirmed_at, duration_days, grams_delivered, status")
+    .select("confirmed_at, duration_days")
+    .eq("phone_number", phone)
+    .eq("status", "paid")
     .not("confirmed_at", "is", null)
     .order("confirmed_at", { ascending: true });
-  if (deliveredError) throw new Error(`Delivery fetch failed: ${deliveredError.message}`);
+  if (error) throw new Error(`Membership lookup failed: ${error.message}`);
 
-  const deliveredByPhone = new Map<string, DeliveredOrder[]>();
-  for (const row of delivered ?? []) {
-    const list = deliveredByPhone.get(row.phone_number) ?? [];
-    list.push(row);
-    deliveredByPhone.set(row.phone_number, list);
-  }
-
-  const banned: string[] = [];
-  for (const user of users ?? []) {
-    const history = deliveredByPhone.get(user.phone_number) ?? [];
-    if (!hasConsistencyBreach(history, user.body_weight_kg ?? 70, user.consistency_reset_at ?? null, now)) continue;
-
-    const { error: banError } = await db
-      .from("users")
-      .update({ banned_at: now.toISOString(), ban_reason: "Missed renewal window before saturation and membership" })
-      .eq("id", user.id);
-    if (!banError) banned.push(user.phone_number);
-  }
-  return banned;
+  const orders = data ?? [];
+  return { isVip: computeStreak(orders, now).member, completedCount: orders.length };
 }
 
-async function countPaidOrders(phone: string): Promise<number> {
-  const { count, error } = await db
-    .from("orders")
-    .select("*", { count: "exact", head: true })
-    .eq("phone_number", phone)
-    .eq("status", "paid");
-  if (error) throw new Error(`Count failed: ${error.message}`);
-  return count || 0;
+// Days of dosing at `dosesPerDay` sachets a day until the store reaches the
+// threshold, with the same daily decay as simulateOrderWindow (and identical
+// to order-handler's daysToSaturate). null = that pace can never get there.
+const MAX_SATURATION_DAYS = 120;
+
+function daysToSaturate(currentStoreGrams: number, thresholdGrams: number, dosesPerDay: number): number | null {
+  let store = currentStoreGrams;
+  const dose = dosesPerDay * FLAT_SACHET_GRAMS;
+  for (let day = 1; day <= MAX_SATURATION_DAYS; day++) {
+    store = Math.min(thresholdGrams, decayStore(store, 1) + dose);
+    if (store >= thresholdGrams) return day;
+  }
+  return null;
 }
 
 serve(async (req: Request) => {
@@ -289,14 +237,13 @@ serve(async (req: Request) => {
 
     const now = new Date();
 
-    const bannedThisRun = await banInconsistentClients(now);
-
     // Orders that are paid, on auto-renew, not cancelled, and haven't already
     // spawned their next batch yet.
     const { data: dueCandidates, error: fetchError } = await db
       .from("orders")
       .select("*")
       .eq("status", "paid")
+      .not("confirmed_at", "is", null) // the due date counts from real pickup
       .eq("auto_renew", true)
       .is("renewal_cancelled_at", null)
       .is("renewed_at", null);
@@ -307,9 +254,9 @@ serve(async (req: Request) => {
 
     for (const order of dueCandidates || []) {
       const durationDays = order.duration_days ?? 1;
-      // Use confirmed_at (real delivery date) when available — falls back
-      // to created_at only for orders placed before that column existed.
-      const orderStart = new Date(order.confirmed_at ?? order.created_at);
+      // confirmed_at is the real pickup date (candidates are delivered only,
+      // so a paid-but-not-yet-delivered order can't renew early).
+      const orderStart = new Date(order.confirmed_at);
       const dueDate = addDays(orderStart, durationDays);
 
       if (nairobiDateOnly(dueDate) > nairobiDateOnly(now)) continue;
@@ -317,20 +264,10 @@ serve(async (req: Request) => {
       try {
         const { data: userRow, error: userError } = await db
           .from("users")
-          .select("id, body_weight_kg, store_grams_at_last_order, store_reference_date, banned_at")
+          .select("id, body_weight_kg, store_grams_at_last_order, store_reference_date")
           .eq("phone_number", order.phone_number)
           .maybeSingle();
         if (userError) throw new Error(`User lookup failed: ${userError.message}`);
-
-        // Banned clients get no further auto-renewed batches.
-        if (userRow?.banned_at) {
-          await db
-            .from("orders")
-            .update({ renewal_cancelled_at: now.toISOString() })
-            .eq("id", order.id);
-          results.push({ phone: order.phone_number, previous_order: order.client_order_id, status: "skipped_banned" });
-          continue;
-        }
 
         const weightKg = userRow?.body_weight_kg ?? order.body_weight_kg ?? 70;
         const threshold = saturationThresholdGrams(weightKg);
@@ -352,9 +289,10 @@ serve(async (req: Request) => {
         });
 
         const isSaturated = currentStore >= threshold;
-        const paidCount = await countPaidOrders(order.phone_number);
-        const isVip = paidCount >= 4;
-        const isMilestone = isVip && ((paidCount - 3) % 4 === 0);
+        const membership = await getMembership(order.phone_number, now);
+        const isVip = membership.isVip;
+        // Milestone on a member's 8th, 12th, 16th order and so on.
+        const isMilestone = isVip && (membership.completedCount + 1) % 4 === 0;
 
         let nextDosesPerDay: number;
         let nextDurationDays: number;
@@ -372,9 +310,8 @@ serve(async (req: Request) => {
             ? HEAVY_CLIENT_DOSES_PER_DAY
             : Math.min(MAX_DOSES_PER_DAY, previousDosesPerDay);
 
-          const remainingGrams = Math.max(0, threshold - currentStore);
-          const gramsPerDay = nextDosesPerDay * FLAT_SACHET_GRAMS;
-          const daysStillNeeded = Math.max(1, Math.ceil(remainingGrams / gramsPerDay));
+          // Decay-aware: same day-by-day model the live saturation status uses.
+          const daysStillNeeded = daysToSaturate(currentStore, threshold, nextDosesPerDay) ?? WEEKLY_BATCH_DAYS;
 
           // Cap each batch at a week, but never let a tail batch (the last
           // leg of a multi-week saturation journey) drop below
@@ -458,7 +395,7 @@ serve(async (req: Request) => {
       }
     }
 
-    return new Response(JSON.stringify({ processed: results.length, banned_for_inconsistency: bannedThisRun, results }), {
+    return new Response(JSON.stringify({ processed: results.length, results }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

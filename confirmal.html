@@ -99,21 +99,16 @@
       <strong>Who needs a nudge</strong>
       <button class="secondary" onclick="loadNudges()">Refresh</button>
     </div>
-    <p class="subtitle" style="margin:0.35rem 0 0.9rem;">Batches ending within a day or already finished. Clients who aren't yet both saturated and a member are banned automatically once 3 days late, so reach them first. Everyone else is only ever nudged.</p>
+    <p class="subtitle" style="margin:0.35rem 0 0.9rem;">Batches ending within a day or already finished. Reaching out before a client's pickup deadline keeps their streak toward VIP alive. Nobody is ever banned or blocked.</p>
     <div id="nudge-list"></div>
   </div>
 
-  <div class="card" id="access-card" style="display:none;">
-    <strong>Client Access</strong>
-    <p class="subtitle" style="margin:0.35rem 0 0.9rem;">Clients who miss a pickup before they are both saturated and a member are banned automatically. After that they are only nudged. Check, ban or unban a number here; unbanning or giving grace restarts their clock.</p>
-    <input type="text" id="access-phone" placeholder="+2547XXXXXXXX">
-    <button style="margin-top:0.6rem;" onclick="checkClientAccess()">Check Client</button>
-    <div id="access-status" class="status-msg"></div>
-    <div id="access-actions" style="display:none; margin-top:0.75rem; gap:0.5rem;">
-      <button id="ban-btn" onclick="setClientBan(true)" style="background:var(--accent-red); color:#fff;">Ban</button>
-      <button id="unban-btn" class="secondary" onclick="setClientBan(false)">Unban</button>
-      <button id="grace-btn" class="secondary" onclick="setClientBan(false)">Give grace (restart clock)</button>
-    </div>
+  <div class="card" id="streak-card" style="display:none;">
+    <strong>Client Streak</strong>
+    <p class="subtitle" style="margin:0.35rem 0 0.9rem;">VIP needs 4 consecutive orders, each picked up within 3 days of the previous batch ending. Check where a client stands.</p>
+    <input type="text" id="streak-phone" placeholder="+2547XXXXXXXX">
+    <button style="margin-top:0.6rem;" onclick="checkClientStreak()">Check Client</button>
+    <div id="streak-status" class="status-msg"></div>
   </div>
 
   <div class="card" id="referral-card" style="display:none;">
@@ -162,6 +157,12 @@
     return 'KSh ' + num.toLocaleString('en-KE', { maximumFractionDigits: 0 });
   }
 
+  // Escape anything that came from the public order form before it goes
+  // into innerHTML (location, gym and ids are typed by clients).
+  function esc(v) {
+    return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
   function getSecret() {
     return document.getElementById('admin-secret').value.trim();
   }
@@ -188,7 +189,7 @@
 
       document.getElementById('orders-card').style.display = 'block';
       document.getElementById('referral-card').style.display = 'block';
-      document.getElementById('access-card').style.display = 'block';
+      document.getElementById('streak-card').style.display = 'block';
       document.getElementById('nudge-card').style.display = 'block';
       loadNudges();
       renderOrders(json.orders || []);
@@ -198,10 +199,9 @@
     }
   }
 
+  // Today's date in Nairobi (UTC+3), matching the server's calendar-day check.
   function todayLocalISO() {
-    const d = new Date();
-    const offset = d.getTimezoneOffset();
-    return new Date(d.getTime() - offset * 60000).toISOString().slice(0, 10);
+    return new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
   }
 
   function renderOrders(orders) {
@@ -211,16 +211,18 @@
       return;
     }
 
+    const today = todayLocalISO();
     list.innerHTML = orders.map(o => {
       const delivered = !!o.confirmed_at;
       const paid = o.status === 'paid';
+      const id = esc(o.client_order_id);
 
       return `
-      <div class="order-row" id="row-${o.client_order_id}">
+      <div class="order-row">
         <div class="order-meta">
-          <strong>${o.phone_number}</strong> \u2014 ${o.plan_name || 'Order'}${o.client_banned ? ' <span style="color:var(--accent-red); font-weight:700;">\ud83d\udeab BANNED \u2014 don\'t pack</span>' : ''}<br>
-          ${o.duration_days} days, ${o.total_sachets} sachets${o.bonus_sachets > 0 ? ' <strong style="color:var(--accent-gold);">+ ' + o.bonus_sachets + ' bonus sachets (pack these in)</strong>' : ''}, ${formatKES(o.net_amount)}<br>
-          ${o.location || ''}${o.gym ? ' (' + o.gym + ')' : ''}${o.auto_renew ? ' \u00b7 \ud83d\udd01 auto-renew' : ''}<br>
+          <strong>${esc(o.phone_number)}</strong> \u2014 ${esc(o.plan_name || 'Order')}<br>
+          ${esc(o.duration_days)} days, ${esc(o.total_sachets)} sachets${o.bonus_sachets > 0 ? ' <strong style="color:var(--accent-gold);">+ ' + esc(o.bonus_sachets) + ' bonus sachets (pack these in)</strong>' : ''}, ${formatKES(o.net_amount)}<br>
+          ${esc(o.location || '')}${o.gym ? ' (' + esc(o.gym) + ')' : ''}${o.auto_renew ? ' \u00b7 \ud83d\udd01 auto-renew' : ''}<br>
           <span style="color:var(--text-muted);">Placed ${new Date(o.created_at).toLocaleDateString('en-KE', { day: 'numeric', month: 'short' })}</span><br>
           <span style="color:${delivered ? 'var(--accent-green)' : 'var(--text-muted)'};">${delivered ? '\u2713 Delivered' : '\u25cb Not yet delivered'}</span>
           &nbsp;\u00b7&nbsp;
@@ -228,14 +230,14 @@
         </div>
         <div style="display:flex; flex-direction:column; gap:0.4rem; align-items:flex-end;">
           ${!delivered ? `
-            <label style="font-size:0.72rem; color:var(--text-muted);">
-              Picked up on
-              <input type="date" id="pickup-${o.client_order_id}" value="${todayLocalISO()}" max="${todayLocalISO()}" style="width:auto; padding:0.3rem 0.5rem; font-size:0.8rem; margin-left:0.3rem;">
+            <label style="font-size:0.72rem; color:var(--text-muted); text-align:right;">
+              Picked up on (use the real date, it drives streaks)
+              <input type="date" class="pickup-date" value="${today}" max="${today}" style="width:auto; padding:0.3rem 0.5rem; font-size:0.8rem; margin-left:0.3rem;">
             </label>
-            <button onclick="confirmDeliveryAction('${o.client_order_id}')" id="deliver-btn-${o.client_order_id}">Confirm Delivery</button>
+            <button data-action="deliver" data-order="${id}">Confirm Delivery</button>
           ` : ''}
           ${!paid ? `
-            <button onclick="confirmPaymentAction('${o.client_order_id}')" id="pay-btn-${o.client_order_id}">Confirm Payment</button>
+            <button data-action="pay" data-order="${id}">Confirm Payment</button>
           ` : ''}
         </div>
       </div>
@@ -243,10 +245,19 @@
     }).join('');
   }
 
-  async function confirmDeliveryAction(clientOrderId) {
+  // One delegated handler instead of inline onclick strings, so no
+  // client-supplied value is ever interpolated into JavaScript.
+  document.getElementById('orders-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const clientOrderId = btn.dataset.order;
+    if (btn.dataset.action === 'deliver') confirmDeliveryAction(clientOrderId, btn);
+    else if (btn.dataset.action === 'pay') confirmPaymentAction(clientOrderId, btn);
+  });
+
+  async function confirmDeliveryAction(clientOrderId, btn) {
     const secret = getSecret();
-    const btn = document.getElementById(`deliver-btn-${clientOrderId}`);
-    const dateInput = document.getElementById(`pickup-${clientOrderId}`);
+    const dateInput = btn.closest('.order-row').querySelector('.pickup-date');
     const pickupDate = dateInput ? dateInput.value : '';
 
     btn.disabled = true;
@@ -261,7 +272,7 @@
       });
       if (!json.confirmed) throw new Error(json.reason || json.error || 'Confirmation failed.');
 
-      // Re-fetch rather than patch the row in place — the row's other
+      // Re-fetch rather than patch the row in place \u2014 the row's other
       // action (payment) may still be outstanding, and the fresh list is
       // the simplest way to reflect that correctly.
       await loadPendingOrders();
@@ -272,9 +283,8 @@
     }
   }
 
-  async function confirmPaymentAction(clientOrderId) {
+  async function confirmPaymentAction(clientOrderId, btn) {
     const secret = getSecret();
-    const btn = document.getElementById(`pay-btn-${clientOrderId}`);
 
     btn.disabled = true;
     btn.textContent = 'Confirming...';
@@ -295,20 +305,23 @@
     }
   }
 
+  function fmtDate(iso) {
+    return new Date(iso).toLocaleDateString('en-KE', { day: 'numeric', month: 'short' });
+  }
+
   function nudgeMessage(n) {
-    const fmt = (iso) => new Date(iso).toLocaleDateString('en-KE', { day: 'numeric', month: 'short' });
     const upcoming = n.days_to_window_end > 0;
     const days = Math.max(1, Math.ceil(-n.days_to_window_end));
     const plural = days === 1 ? '' : 's';
+    const asks = upcoming
+      ? `Hi! Your creatine batch runs out on ${fmtDate(n.window_end)}. Want me to prep your next one? Just reply YES.`
+      : `Hi! Your batch ran out ${days} day${plural} ago. Want me to prep your next one? Just reply YES.`;
 
-    if (n.phase === 'strict') {
-      return upcoming
-        ? `Hi! Your creatine batch runs out on ${fmt(n.window_end)}. Want me to prep your next one? Just reply YES. Until you've reached saturation and membership, I need each batch collected within 3 days of the last one ending.`
-        : `Hi! Your batch ran out ${days} day${plural} ago. To keep your spot I need your next pickup by ${fmt(n.ban_deadline)}. Reply and I'll have it ready.`;
+    if (n.member) return asks;
+    if (n.streak_alive && n.streak > 0 && n.pickup_deadline) {
+      return `${asks} Collect it by ${fmtDate(n.pickup_deadline)} and your streak toward VIP (${n.streak} of 4) keeps going.`;
     }
-    return upcoming
-      ? `Hi! Your batch runs out on ${fmt(n.window_end)}. Want me to prep your next one? Just reply YES.`
-      : `Hi! Your sachets ran out ${days} day${plural} ago. A short break won't undo your results, but longer ones start to. Want me to prep your next batch?`;
+    return `${asks} Your next order starts a fresh streak toward VIP.`;
   }
 
   async function loadNudges() {
@@ -326,30 +339,28 @@
       list.innerHTML = nudges.map(n => {
         const d = n.days_to_window_end;
         const timing = d > 0 ? `runs out in ${Math.ceil(d)} day(s)` : `ran out ${Math.max(1, Math.ceil(-d))} day(s) ago`;
-        const why = n.saturated ? 'saturated, not yet a member' : (n.member ? 'a member, not yet saturated' : 'not yet saturated or a member');
-        const tag = n.phase === 'strict'
-          ? `<span style="color:var(--accent-red);">${why} - banned after ${new Date(n.ban_deadline).toLocaleDateString('en-KE', { day: 'numeric', month: 'short' })}</span>`
-          : `<span style="color:var(--text-muted);">saturated and a member - nudge only</span>`;
-        const link = `https://wa.me/${n.phone.replace('+', '')}?text=${encodeURIComponent(nudgeMessage(n))}`;
+        let tag;
+        if (n.member) tag = '<span style="color:var(--text-muted);">VIP member</span>';
+        else if (n.streak_alive && n.streak > 0 && n.pickup_deadline) tag = `<span style="color:var(--accent-gold);">streak ${esc(n.streak)}/4 \u2014 pick up by ${esc(fmtDate(n.pickup_deadline))} to keep it</span>`;
+        else tag = '<span style="color:var(--text-muted);">streak lapsed \u2014 next order restarts at 1</span>';
+        const link = `https://wa.me/${encodeURIComponent(n.phone.replace('+', ''))}?text=${encodeURIComponent(nudgeMessage(n))}`;
         return `
         <div class="order-row">
-          <div class="order-meta"><strong>${n.phone}</strong><br>${timing}<br>${tag}</div>
+          <div class="order-meta"><strong>${esc(n.phone)}</strong><br>${timing}<br>${tag}</div>
           <a href="${link}" target="_blank" rel="noopener"><button>Open WhatsApp</button></a>
         </div>`;
       }).join('');
     } catch (err) {
-      list.innerHTML = `<div class="status-msg error">${err.message || 'Failed to load nudges.'}</div>`;
+      list.innerHTML = `<div class="status-msg error">${esc(err.message || 'Failed to load nudges.')}</div>`;
     }
   }
 
-  async function checkClientAccess() {
-    const status = document.getElementById('access-status');
-    const actions = document.getElementById('access-actions');
+  async function checkClientStreak() {
+    const status = document.getElementById('streak-status');
     status.textContent = '';
     status.className = 'status-msg';
-    actions.style.display = 'none';
 
-    const phone = normalizePhone(document.getElementById('access-phone').value.trim());
+    const phone = normalizePhone(document.getElementById('streak-phone').value.trim());
     if (!phone) {
       status.textContent = 'Enter a valid Kenya phone number (e.g. 0712345678).';
       status.className = 'status-msg error';
@@ -357,7 +368,7 @@
     }
 
     try {
-      const json = await callOrderHandler({ get_ban_status: true, admin_secret: getSecret(), phone_number: phone });
+      const json = await callOrderHandler({ get_streak: true, admin_secret: getSecret(), phone_number: phone });
       if (json.error) throw new Error(json.error);
       const c = json.client;
 
@@ -366,37 +377,19 @@
         return;
       }
 
-      const phase = c.protected === true ? ' - saturated and a member (nudge only)' : c.protected === false ? ' - not yet both saturated and a member (strict)' : '';
-      const lines = [`${c.completed_orders} paid order(s)${phase}`];
-      if (c.banned) lines.push(`BANNED${c.ban_reason ? ' \u2014 ' + c.ban_reason : ''}`);
-      else if (c.missed_window_now) lines.push('Missed their renewal window \u2014 will be banned on their next order or the next daily sweep.');
-      else lines.push('In good standing.');
+      const lines = [`${c.completed_orders} paid and picked-up order(s) (${c.paid_orders} paid in total)`];
+      if (c.is_member) {
+        lines.push('VIP member \u2014 earned with a full streak and kept for good.');
+      } else {
+        lines.push(`Streak: ${c.streak} / ${c.streak_target} consecutive (best so far ${c.best_streak})`);
+        if (c.streak_alive && c.pickup_deadline) lines.push(`Next pickup due by ${fmtDate(c.pickup_deadline)} to keep the streak.`);
+        else if (c.completed_orders > 0) lines.push('Streak lapsed \u2014 their next order restarts it at 1.');
+      }
 
-      status.innerHTML = lines.join('<br>');
-      status.className = c.banned || c.missed_window_now ? 'status-msg error' : 'status-msg ok';
-      actions.style.display = 'flex';
-      document.getElementById('ban-btn').style.display = c.banned ? 'none' : 'inline-block';
-      document.getElementById('unban-btn').style.display = c.banned ? 'inline-block' : 'none';
-      document.getElementById('grace-btn').style.display = c.banned ? 'none' : 'inline-block';
+      status.innerHTML = lines.map(esc).join('<br>');
+      status.className = 'status-msg ok';
     } catch (err) {
       status.textContent = err.message || 'Failed to check client.';
-      status.className = 'status-msg error';
-    }
-  }
-
-  async function setClientBan(banned) {
-    const status = document.getElementById('access-status');
-    const phone = normalizePhone(document.getElementById('access-phone').value.trim());
-    if (!phone) return;
-    if (!confirm(banned ? `Ban ${phone}? They won't be able to order.` : `Restart ${phone}'s consistency clock now (and lift any ban)?`)) return;
-
-    try {
-      const json = await callOrderHandler({ set_ban: true, admin_secret: getSecret(), phone_number: phone, banned });
-      if (json.error) throw new Error(json.error);
-      await checkClientAccess();
-      await loadPendingOrders();
-    } catch (err) {
-      status.textContent = err.message || 'Failed to update.';
       status.className = 'status-msg error';
     }
   }
